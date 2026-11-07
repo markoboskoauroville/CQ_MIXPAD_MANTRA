@@ -104,9 +104,10 @@ How you act:
                 if (l.isNotEmpty()) append("LABELS: ").append(l.entries.joinToString("; ") { "${it.key} = ${it.value.name} (${it.value.instrument})" }).append("\n")
                 val n = store.notes.value.takeLast(30)
                 if (n.isNotEmpty()) append("WHAT WE LEARNT BEFORE:\n").append(n.joinToString("\n") { "- $it" }).append("\n")
-                val past = store.recentConcerts(2)
-                if (past.isNotEmpty()) append("LAST CONCERTS (saved mixes): ").append(past.joinToString("\n") { it.toString().take(3000) }).append("\n")
-                append("VENUE TODAY: ").append(store.venue.value).append("\n")
+                val c = store.current.value
+                append("THIS CONCERT: ").append(c?.let { "${it.venue}, ${it.date}" } ?: "?").append(" (channels and players can differ from the last concert: adapt)\n")
+                val h = store.history(3)
+                if (h.isNotBlank()) append("EARLIER CONCERTS (labels and mixes):\n").append(h).append("\n")
                 if (analysis != null) append("ROOM ANALYSIS: ").append(analysis).append("\n")
                 append("\nMARKO: ").append(command)
             }

@@ -148,6 +148,11 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         val v = Cq.panToValue(pct); values[param] = v; tick.value = tick.value + 1
         send(Cq.setValue(param, v))
     }
+    /** A stored value back to the desk: mute parameters (MSB 0x00, 0x02, 0x04) as mutes, the rest as values. */
+    fun setRaw(param: Int, v: Int) {
+        values[param] = v; tick.value = tick.value + 1
+        if ((param shr 7) in setOf(0x00, 0x02, 0x04)) send(Cq.setMute(param, v == 1)) else send(Cq.setValue(param, v))
+    }
     fun scene(n: Int) { send(Cq.scene(n)); scope.launch(Dispatchers.IO) { delay(700); readAll() } }
     fun softKey(n: Int) { send(Cq.softKeyPress(n)); scope.launch { delay(120); send(Cq.softKeyRelease(n)) } }
     fun refresh() { scope.launch(Dispatchers.IO) { readAll() } }

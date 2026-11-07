@@ -66,7 +66,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 import java.util.Locale
 
 private val Bg = Color(0xFF0B0B0C)
@@ -218,11 +217,15 @@ class MainActivity : ComponentActivity() {
     private fun openAppSettings() = startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
 
     private fun saveConcert() {
-        val mix = JSONObject()
-        link.values.forEach { (k, v) -> mix.put(k.toString(), v) }
-        mix.put("desk", deskText())
-        val name = store.saveConcert(mix)
-        say("Concert saved: $name.")
+        store.saveMix(HashMap(link.values), deskText())
+        say("Saved the mix of ${store.current.value?.venue}, ${store.current.value?.date}.")
+    }
+
+    /** The concert's stored mix sent to the desk (faders, sends, pans, mutes). */
+    private fun sendMixToDesk() {
+        val m = store.mix(); if (m.isEmpty()) { say("This concert has no stored mix yet."); return }
+        m.forEach { (p, v) -> link.setRaw(p, v) }
+        log.add(0, "  ✓ ${m.size} values of ${store.current.value?.venue} sent to the desk")
     }
 
     // ---------- the screen ----------
@@ -236,6 +239,8 @@ class MainActivity : ComponentActivity() {
         val labels by store.labels.collectAsState()
         var mix by remember { mutableStateOf("MAIN") }
         var keyDialog by remember { mutableStateOf(false) }
+        var concertDialog by remember { mutableStateOf(false) }
+        val concert by store.current.collectAsState()
         tick.hashCode()
 
         Column(Modifier.fillMaxSize().background(Bg).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp).imePadding()) {
@@ -251,6 +256,9 @@ class MainActivity : ComponentActivity() {
                 if (store.apiKey() == null) Chip("KEY", Amber) { keyDialog = true }
                 Chip(if (speakAloud) "VOICE ON" else "VOICE OFF", if (speakAloud) Green else Grey) { speakAloud = !speakAloud; speech.stop() }
                 Chip("SAVE", Blue) { saveConcert() }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Chip(concert?.let { "${it.venue} · ${it.date}" } ?: "CONCERT", Amber, filled = true) { concertDialog = true }
             }
             // mixes
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
@@ -301,6 +309,7 @@ class MainActivity : ComponentActivity() {
             CommandBar()
         }
         if (keyDialog) KeyDialog { keyDialog = false }
+        if (concertDialog) ConcertDialog { concertDialog = false }
     }
 
     @Composable
@@ -350,6 +359,37 @@ class MainActivity : ComponentActivity() {
             }
             Chip("SEND", if (busy) Grey else Cyan, filled = !busy) { if (text.isNotBlank()) { command(text.trim(), false); text = "" } }
             Chip("SPEAK", if (micOk) Green else Amber, filled = micOk) { if (micOk) { speech.stop(); voice.listen() } else openAppSettings() }
+        }
+    }
+
+    @Composable
+    private fun ConcertDialog(close: () -> Unit) {
+        val list by store.concerts.collectAsState()
+        val cur by store.current.collectAsState()
+        var venue by remember { mutableStateOf("") }
+        var date by remember { mutableStateOf(java.text.SimpleDateFormat("d.M.yyyy", Locale.US).format(java.util.Date())) }
+        Box(Modifier.fillMaxSize().background(Color(0xCC000000)).clickable { close() }, contentAlignment = Alignment.Center) {
+            Column(Modifier.fillMaxWidth(0.92f).clip(RoundedCornerShape(10.dp)).background(Panel).padding(14.dp).clickable(enabled = false) {}) {
+                Text("CONCERTS", color = Amber, fontWeight = FontWeight.Bold)
+                Text("Each concert keeps its own names, roles and mix.", color = Grey, fontSize = 12.sp)
+                list.sortedByDescending { it.id }.forEach { c ->
+                    Text("${if (c.id == cur?.id) "▶ " else "   "}${c.venue} · ${c.date}", color = if (c.id == cur?.id) Cyan else Text1, fontSize = 15.sp,
+                        modifier = Modifier.fillMaxWidth().clickable { store.open(c.id) }.padding(vertical = 7.dp))
+                }
+                Row { Chip("SEND ITS MIX TO THE DESK", Green) { sendMixToDesk(); close() } }
+                Text("NEW CONCERT (a copy of the one marked ▶)", color = Grey, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+                Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).border(1.dp, Rim, RoundedCornerShape(6.dp)).padding(8.dp)) {
+                    if (venue.isEmpty()) Text("place", color = Grey, fontSize = 14.sp)
+                    BasicTextField(venue, { venue = it }, textStyle = TextStyle(color = Text1, fontSize = 14.sp), cursorBrush = SolidColor(Cyan), modifier = Modifier.fillMaxWidth())
+                }
+                Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).border(1.dp, Rim, RoundedCornerShape(6.dp)).padding(8.dp)) {
+                    BasicTextField(date, { date = it }, textStyle = TextStyle(color = Text1, fontSize = 14.sp), cursorBrush = SolidColor(Cyan), modifier = Modifier.fillMaxWidth())
+                }
+                Row {
+                    Chip("CREATE", Green, filled = true) { if (venue.isNotBlank()) { store.newConcert(venue, date, cur?.id); close() } }
+                    Chip("CLOSE", Grey) { close() }
+                }
+            }
         }
     }
 
