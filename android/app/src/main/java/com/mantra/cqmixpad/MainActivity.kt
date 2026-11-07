@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity() {
     private var rtaJob: Job? = null
     private lateinit var speech: Speech
     private lateinit var voice: Voice
+    private lateinit var hear: Hear
 
     private val log = mutableStateListOf<String>()
     private val pending = mutableStateListOf<Brain.Action>()
@@ -111,6 +112,7 @@ class MainActivity : ComponentActivity() {
             if (rtaWasOn) { rtaWasOn = false; toggleRta() }
             if (!t.isNullOrBlank()) command(t, fromVoice = true) else say("I did not catch that.")
         })
+        hear = Hear(this)
         link.start()
         setContent { Screen() }
     }
@@ -231,6 +233,28 @@ class MainActivity : ComponentActivity() {
     private fun vocabulary(): List<String> = (store.labels.value.values.flatMap { listOf(it.name, it.instrument.substringBefore(",")) } +
         listOf("djembe", "mridangam", "Svemir", "Tajana", "Igor", "Snoopy", "Diana", "Santoshi", "Krishna Das", "monitor", "reverb",
             "decibels", "mute", "unmute", "pan", "backing vocal", "lead vocal", "bass", "guitar", "channel", "scene")).filter { it.isNotBlank() }.distinct()
+
+    /** SPEAK: AssemblyAI (Sync, the band's words in its prompt); Android's recogniser only when AssemblyAI fails. */
+    private fun startListening() {
+        speech.stop()
+        if (rtaOn) { rta.stop(); rtaJob = null; rtaOn = false; rtaWasOn = true }
+        listening = true
+        if (!hear.hasKeys()) { voice.hints = vocabulary(); voice.listen(); return }
+        lifecycleScope.launch {
+            heard = "listening…"
+            val wav = hear.record { db -> heard = if (db > -45) "listening… ●" else "listening…" }
+            if (wav == null) { heard = ""; listening = false; resumeRta(); say("I did not hear anything."); return@launch }
+            heard = "understanding…"
+            val t0 = System.currentTimeMillis()
+            val text = hear.transcribe(wav, vocabulary())
+            heard = ""; listening = false; resumeRta()
+            if (text == null) { log.add(0, "  ! AssemblyAI did not answer: Android's recogniser instead"); listening = true; voice.hints = vocabulary(); voice.listen(); return@launch }
+            log.add(0, String.format(Locale.US, "  (AssemblyAI %.1f s)", (System.currentTimeMillis() - t0) / 1000.0))
+            if (text.isBlank()) say("I did not catch that.") else command(text, fromVoice = true)
+        }
+    }
+
+    private fun resumeRta() { if (rtaWasOn) { rtaWasOn = false; toggleRta() } }
 
     private fun toggleRta() {
         if (rtaJob?.isActive == true) { rta.stop(); rtaJob = null; rtaOn = false }
@@ -394,7 +418,8 @@ class MainActivity : ComponentActivity() {
             Chip("SEND", if (busy) Grey else Cyan, filled = !busy) { if (text.isNotBlank()) { command(text.trim(), false); text = "" } }
             Chip(if (listening) "LISTENING" else "SPEAK", if (micOk) Green else Amber, filled = micOk || listening) {
                 if (!micOk) openAppSettings()
-                else if (!busy) { voice.hints = vocabulary(); speech.stop(); if (rtaOn) { rta.stop(); rtaJob = null; rtaOn = false; rtaWasOn = true }; listening = true; voice.listen() }
+                else if (listening) hear.stopNow = true            // a second tap ends the phrase
+                else if (!busy) startListening()
             }
         }
     }

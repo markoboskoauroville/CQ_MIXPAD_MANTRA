@@ -27,3 +27,13 @@
 > So for these first concerts, we can pretend this is— this was live in Šubič, and the date you know. If you don't know the date, open the web page of, of our band and see it there in history.
 
 **Status 7.11.2026:** v2 Speechify; v3 concerts (Šubić 17.10.2026 template, Indian Embassy 7.11.2026); SD card formatted once (it held 192 KB), 12 min of Šubić recording to it.
+
+> Keep testing keep debugging go deep it must work for tonight , scene is saved on mixer so just recall it when i close the session
+
+> use ears and voice of mac to test if needed using external mic and aadam audio
+
+> for voice recognition usr assembly ai api key is in downloads api folder compy assembly ai keys to pixel seven
+
+> look at ttt my keyboard app how to transcribe using AssemblyAI
+
+**Status 7.11.2026:** v4 relative faders, always spoken; v5 spoken by name, RTA guard; v6 AssemblyAI Sync (TTT's way), 20 keys on the Pixel. Voice loop tested with ADAM + the Mac's mic + Whisper.
