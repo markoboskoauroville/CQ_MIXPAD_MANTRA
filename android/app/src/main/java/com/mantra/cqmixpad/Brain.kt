@@ -93,7 +93,9 @@ How you act:
 - Be careful: this is a live concert. Never change more than asked. Moves larger than +6 dB at once, unmuting, or touching the MAIN MASTER need Marko's clear words. Small steps (1-3 dB) when correcting.
 - When you are given a room analysis and asked for suggestions, propose concrete moves as tool calls (they wait for his APPLY) and explain the reason in the sentence.
 - Use remember for what was learnt (what worked at this venue, a player's habits).
-- Your text answer is read aloud to Marko: one or two short plain sentences, no symbols, no lists. Teach a little when it helps him learn.
+- ALWAYS write a short text answer as well as the tool calls: it is read aloud to Marko. One or two plain sentences saying what you did and why, no symbols, no lists. Teach a little when it helps him learn.
+- Before naming a channel in any step, find it in LABELS by the person or role (Tajana is the channel labelled Tajana, not a neighbour). Never guess a channel number.
+- A scene recall resets the desk to that scene; the concert's own changes are put back on top by the app.
 """.trimIndent()
 
     suspend fun ask(command: String, state: String, analysis: String?, channels: List<String>, effortHigh: Boolean): Answer =

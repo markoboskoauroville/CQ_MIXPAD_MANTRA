@@ -95,6 +95,8 @@ class MainActivity : ComponentActivity() {
     private var speakAloud by mutableStateOf(true)
     private var micOk by mutableStateOf(false)
     private var rtaOn by mutableStateOf(false)
+    private var rtaWasOn = false
+    private var listening by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -105,7 +107,8 @@ class MainActivity : ComponentActivity() {
         brain = Brain(store)
         speech = Speech(this, lifecycleScope) { log.add(0, it) }
         voice = Voice(this, onPartial = { heard = it }, onFinal = { t ->
-            heard = ""
+            heard = ""; listening = false
+            if (rtaWasOn) { rtaWasOn = false; toggleRta() }
             if (!t.isNullOrBlank()) command(t, fromVoice = true) else say("I did not catch that.")
         })
         link.start()
@@ -158,12 +161,27 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 val rtaText = if (withRta || rtaJob?.isActive == true) rta.text() else null
+                val t0 = System.currentTimeMillis()
                 val a = brain.ask(text, deskText(), rtaText, link.present.value.map { it.id }, effortHigh = withRta)
+                log.add(0, String.format(Locale.US, "  (Sonnet %.1f s)", (System.currentTimeMillis() - t0) / 1000.0))
                 if (withRta) { pending.clear(); pending.addAll(a.actions.filter { it.name !in setOf("remember", "note_for_marko", "set_label") }) }
                 for (act in a.actions) {
                     if (!withRta || act.name in setOf("remember", "note_for_marko", "set_label")) apply(act)
                 }
-                if (a.say.isNotBlank()) say(a.say)
+                // the concert keeps what was done tonight
+                if (!withRta && a.actions.any { it.name in setOf("set_level", "change_level", "set_mute", "set_pan") }) {
+                    kotlinx.coroutines.delay(400); store.saveMix(HashMap(link.values), deskText())
+                }
+                // always spoken: Sonnet's sentence, or what was done when it gave none
+                val done = a.actions.filter { it.name != "note_for_marko" && it.name != "remember" }.map { it.text() }
+                val notes = a.actions.count { it.name == "note_for_marko" }
+                when {
+                    a.say.isNotBlank() -> say(a.say)
+                    withRta && pending.isNotEmpty() -> say("I suggest ${pending.size} moves. Tap apply to make them.")
+                    done.isNotEmpty() -> say("Done: " + done.joinToString(", ").replace("→", "to") + if (notes > 0) ". And $notes step${if (notes > 1) "s" else ""} for you in MixPad." else ".")
+                    notes > 0 -> say("$notes step${if (notes > 1) "s" else ""} for you in MixPad, in orange.")
+                    else -> say("Nothing to change.")
+                }
             } catch (e: Exception) {
                 say("Sonnet did not answer: ${e.message?.take(140)}")
             } finally { busy = false }
@@ -222,10 +240,17 @@ class MainActivity : ComponentActivity() {
     }
 
     /** The concert's stored mix sent to the desk (faders, sends, pans, mutes). */
+    /** The concert onto the desk: its base scene first (processing, presets, names, FX), then its own mix on top,
+     *  so a scene recall never undoes tonight's changes. */
     private fun sendMixToDesk() {
-        val m = store.mix(); if (m.isEmpty()) { say("This concert has no stored mix yet."); return }
-        m.forEach { (p, v) -> link.setRaw(p, v) }
-        log.add(0, "  ✓ ${m.size} values of ${store.current.value?.venue} sent to the desk")
+        val m = store.mix(); val scene = store.baseScene()
+        lifecycleScope.launch {
+            if (scene > 0) { link.scene(scene); log.add(0, "  ✓ scene $scene recalled (processing, presets, FX)"); kotlinx.coroutines.delay(2500) }
+            if (m.isEmpty()) { say("Scene $scene is on the desk. This concert has no mix of its own yet."); return@launch }
+            m.forEach { (p, v) -> link.setRaw(p, v) }
+            log.add(0, "  ✓ ${m.size} values of ${store.current.value?.venue} on top")
+            say("${store.current.value?.venue} is on the desk: scene $scene and its mix.")
+        }
     }
 
     // ---------- the screen ----------
@@ -293,7 +318,7 @@ class MainActivity : ComponentActivity() {
                     Text("SONNET SUGGESTS", color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     pending.forEach { Text(it.text(), color = Text1, fontSize = 13.sp) }
                     Row {
-                        Chip("APPLY", Green, filled = true) { pending.toList().forEach { apply(it) }; pending.clear() }
+                        Chip("APPLY", Green, filled = true) { pending.toList().forEach { apply(it) }; pending.clear(); store.saveMix(HashMap(link.values), deskText()) }
                         Chip("DISMISS", Grey) { pending.clear() }
                     }
                 }
@@ -358,7 +383,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxWidth())
             }
             Chip("SEND", if (busy) Grey else Cyan, filled = !busy) { if (text.isNotBlank()) { command(text.trim(), false); text = "" } }
-            Chip("SPEAK", if (micOk) Green else Amber, filled = micOk) { if (micOk) { speech.stop(); voice.listen() } else openAppSettings() }
+            Chip(if (listening) "LISTENING" else "SPEAK", if (micOk) Green else Amber, filled = micOk || listening) {
+                if (!micOk) openAppSettings()
+                else if (!busy) { speech.stop(); if (rtaOn) { rta.stop(); rtaJob = null; rtaOn = false; rtaWasOn = true }; listening = true; voice.listen() }
+            }
         }
     }
 
@@ -376,7 +404,7 @@ class MainActivity : ComponentActivity() {
                     Text("${if (c.id == cur?.id) "▶ " else "   "}${c.venue} · ${c.date}", color = if (c.id == cur?.id) Cyan else Text1, fontSize = 15.sp,
                         modifier = Modifier.fillMaxWidth().clickable { store.open(c.id) }.padding(vertical = 7.dp))
                 }
-                Row { Chip("SEND ITS MIX TO THE DESK", Green) { sendMixToDesk(); close() } }
+                Row { Chip("PUT IT ON THE DESK (scene ${store.baseScene()} + its mix)", Green) { sendMixToDesk(); close() } }
                 Text("NEW CONCERT (a copy of the one marked ▶)", color = Grey, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
                 Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).border(1.dp, Rim, RoundedCornerShape(6.dp)).padding(8.dp)) {
                     if (venue.isEmpty()) Text("place", color = Grey, fontSize = 14.sp)
@@ -424,6 +452,8 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
                   onDb: (Double) -> Unit, onMute: () -> Unit, onPan: (Double) -> Unit) {
     val maxV = Cq.dbToValue(Cq.MAX_DB).toFloat()
     val setDb by androidx.compose.runtime.rememberUpdatedState(onDb)
+    val curDb by androidx.compose.runtime.rememberUpdatedState(db)
+    val curPan by androidx.compose.runtime.rememberUpdatedState(pan ?: 0.0)
     val setPan by androidx.compose.runtime.rememberUpdatedState(onPan)
     Column(Modifier.width(64.dp).fillMaxHeight().padding(horizontal = 2.dp).clip(RoundedCornerShape(6.dp))
         .background(if (master) Color(0xFF1E1A12) else Panel).padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -437,8 +467,11 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
             Canvas(Modifier.fillMaxWidth().height(22.dp).pointerInput(Unit) {
                 detectTapGestures(onDoubleTap = { setPan(0.0) })
             }.pointerInput(Unit) {
-                detectHorizontalDragGestures { ch, _ ->
-                    setPan(((ch.position.x / size.width) * 200 - 100).toDouble().coerceIn(-100.0, 100.0))
+                // relative: the knob moves only by the finger's travel, a touch never jumps it
+                var start = 0.0; var acc = 0f
+                detectHorizontalDragGestures(onDragStart = { start = curPan; acc = 0f }) { _, dx ->
+                    acc += dx
+                    setPan((start + acc / size.width * 200).coerceIn(-100.0, 100.0))
                 }
             }) {
                 drawRect(Rim, Offset(0f, size.height / 2 - 2), Size(size.width, 4f))
@@ -450,8 +483,11 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
         Text(Cq.dbText(db), color = if (muted) Red else Cyan, fontSize = 11.sp)
         val pos = (Cq.dbToValue(db) / maxV).coerceIn(0f, 1f)
         Canvas(Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp).pointerInput(Unit) {
-            detectVerticalDragGestures { ch, _ ->
-                val f = (1f - ch.position.y / size.height).coerceIn(0f, 1f)
+            // relative: the fader moves only by the finger's travel; a touch anywhere never jumps it (live safety)
+            var start = 0f; var acc = 0f
+            detectVerticalDragGestures(onDragStart = { start = Cq.dbToValue(curDb) / maxV; acc = 0f }) { _, dy ->
+                acc += dy
+                val f = (start - acc / size.height).coerceIn(0f, 1f)
                 setDb(Cq.valueToDb((f * maxV).toInt()))
             }
         }.pointerInput(Unit) { detectTapGestures(onDoubleTap = { setDb(0.0) }) }) {

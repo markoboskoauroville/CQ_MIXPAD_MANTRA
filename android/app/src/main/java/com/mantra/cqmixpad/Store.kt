@@ -87,6 +87,9 @@ class Store(ctx: Context) {
         update { it.put("mix", m).put("desk", desk).put("saved", SimpleDateFormat("d.M.yyyy HH:mm", Locale.US).format(Date())) }
     }
 
+    /** The CQ scene this concert starts from (Scene 1 "Santoshi Mix" unless the concert says otherwise). */
+    fun baseScene(): Int = current.value?.let { read(it.id).optInt("scene", 1) } ?: 1
+
     /** This concert's stored mix: parameter → value. */
     fun mix(id: String? = current.value?.id): Map<Int, Int> {
         val m = (id?.let { read(it) } ?: JSONObject()).optJSONObject("mix") ?: return emptyMap()
