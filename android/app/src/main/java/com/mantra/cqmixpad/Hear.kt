@@ -29,6 +29,9 @@ class Hear(private val ctx: Context) {
     private val keysFile = File(ctx.filesDir, "assemblyai.keys")
     private val prefs = ctx.getSharedPreferences("hear", Context.MODE_PRIVATE)
     @Volatile var stopNow = false
+    @Volatile var cancel = false
+    /** Paused: the mic keeps running for the meter, but nothing is kept and silence does not end the phrase. */
+    @Volatile var paused = false
 
     fun hasKeys() = keys().isNotEmpty()
     private fun keys(): List<String> = try { keysFile.readLines().map { it.trim() }.filter { it.matches(Regex("[0-9a-f]{32}")) } } catch (_: Exception) { emptyList() }
@@ -36,7 +39,7 @@ class Hear(private val ctx: Context) {
     /** Records until 1.2 s of quiet after speech, 12 s, or [stopNow]. Null when nothing was said. */
     @SuppressLint("MissingPermission")
     suspend fun record(onLevel: (Double) -> Unit): ByteArray? = withContext(Dispatchers.IO) {
-        stopNow = false
+        stopNow = false; cancel = false; paused = false
         val rate = 16000
         val min = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val rec = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, 3200) * 2)
@@ -46,12 +49,13 @@ class Hear(private val ctx: Context) {
         var floor = -60.0
         try {
             rec.startRecording()
-            while (isActive && !stopNow && chunks < 120) {
+            while (isActive && !stopNow && !cancel && chunks < 600) {
                 val n = rec.read(buf, 0, buf.size); if (n <= 0) break
                 chunks++
                 var ms = 0.0; for (i in 0 until n) { val x = buf[i] / 32768.0; ms += x * x }
                 val db = 10 * log10(ms / n + 1e-12)
                 onLevel(db)
+                if (paused) continue                                  // held: shown on the meter, not kept
                 if (chunks <= 3) floor = maxOf(floor, db)            // the room in the first 300 ms
                 val loud = db > maxOf(floor + 10, -45.0)
                 if (loud) { spoke = true; quiet = 0 } else if (spoke) quiet++
@@ -59,7 +63,7 @@ class Hear(private val ctx: Context) {
                 if (spoke && quiet >= 12) break
             }
         } finally { rec.stop(); rec.release() }
-        if (!spoke) null else wav(pcm.toByteArray(), rate)
+        if (!spoke || cancel) null else wav(pcm.toByteArray(), rate)
     }
 
     private fun wav(pcm: ByteArray, rate: Int): ByteArray {

@@ -42,6 +42,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -78,6 +79,8 @@ private val Green = Color(0xFF33D17A)
 private val Amber = Color(0xFFFF9F0A)
 private val Blue = Color(0xFF0A84FF)
 private val Cyan = Color(0xFF64D2FF)
+private val Sand = Color(0xFFF2DDB4)      // TTT's ink
+private val RecRed = Color(0xFFEF4444)    // TTT's recording red
 
 class MainActivity : ComponentActivity() {
     private lateinit var link: Link
@@ -98,6 +101,10 @@ class MainActivity : ComponentActivity() {
     private var rtaOn by mutableStateOf(false)
     private var rtaWasOn = false
     private var listening by mutableStateOf(false)
+    private var recPaused by mutableStateOf(false)
+    private var recStart by mutableStateOf(0L)
+    /** The mic level while recording a command (dBFS), for the VU meter. */
+    private val micDb = kotlinx.coroutines.flow.MutableStateFlow(-90f)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -249,9 +256,11 @@ class MainActivity : ComponentActivity() {
         listening = true
         if (!hear.hasKeys()) { voice.hints = vocabulary(); voice.listen(); return }
         lifecycleScope.launch {
-            heard = "listening…"
-            val wav = hear.record { db -> heard = if (db > -45) "listening… ●" else "listening…" }
-            if (wav == null) { heard = ""; listening = false; resumeRta(); say("I did not hear anything."); return@launch }
+            heard = ""
+            recPaused = false; recStart = System.currentTimeMillis()
+            val wav = hear.record { db -> micDb.value = db.toFloat() }
+            micDb.value = -90f
+            if (wav == null) { val cancelled = hear.cancel; heard = ""; listening = false; resumeRta(); if (!cancelled) say("I did not hear anything."); return@launch }
             heard = "understanding…"
             val t0 = System.currentTimeMillis()
             val text = hear.transcribe(wav, vocabulary())
@@ -415,6 +424,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun CommandBar() {
         var text by remember { mutableStateOf("") }
+        if (listening && hear.hasKeys()) { RecordBar(); return }
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).border(1.dp, Rim, RoundedCornerShape(8.dp)).background(Panel).padding(10.dp)) {
                 if (text.isEmpty()) Text(if (busy) "Sonnet is working…" else "Tell Sonnet: backing vocal Diana on channel 4…", color = Grey, fontSize = 14.sp)
@@ -423,12 +433,27 @@ class MainActivity : ComponentActivity() {
                     keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) { command(text.trim(), false); text = "" } }),
                     modifier = Modifier.fillMaxWidth())
             }
+            // the voice command button, beside the box (Marko, 7.11.2026)
+            MicButton(enabled = micOk && !busy) { if (!micOk) openAppSettings() else if (!busy) startListening() }
             Chip("SEND", if (busy) Grey else Cyan, filled = !busy) { if (text.isNotBlank()) { command(text.trim(), false); text = "" } }
-            Chip(if (listening) "LISTENING" else "SPEAK", if (micOk) Green else Amber, filled = micOk || listening) {
-                if (!micOk) openAppSettings()
-                else if (listening) hear.stopNow = true            // a second tap ends the phrase
-                else if (!busy) startListening()
-            }
+        }
+    }
+
+    /** While a voice command records: the time, TTT's VU meter, PAUSE / RESUME, ■ send now, ✕ cancel. */
+    @Composable
+    private fun RecordBar() {
+        val db by micDb.collectAsState()
+        var now by remember { mutableStateOf(System.currentTimeMillis()) }
+        LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(200) } }
+        val secs = ((now - recStart) / 1000).coerceAtLeast(0)
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(8.dp)).background(Panel).padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.width(10.dp).height(10.dp).clip(RoundedCornerShape(5.dp)).background(if (recPaused) Grey else RecRed))
+            Text(String.format(Locale.US, " %d:%02d ", secs / 60, secs % 60), color = Sand, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            VuMeter(db, dim = recPaused, modifier = Modifier.weight(1f).height(14.dp))
+            Chip(if (recPaused) "RESUME" else "PAUSE", Amber, filled = recPaused) { recPaused = !recPaused; hear.paused = recPaused }
+            Chip("■", Green, filled = true) { recPaused = false; hear.paused = false; hear.stopNow = true }
+            Chip("✕", Grey) { hear.cancel = true }
         }
     }
 
@@ -540,5 +565,51 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
             val y = size.height * (1f - pos)
             drawRect(if (muted) Red else Text1, Offset(cx - size.width * 0.38f, y - 10), Size(size.width * 0.76f, 20f))
         }
+    }
+}
+
+
+/** A microphone drawn, so no icon library is needed: green ring, mic capsule and stand. */
+@Composable
+private fun MicButton(enabled: Boolean, onClick: () -> Unit) {
+    val c = if (enabled) Green else Grey
+    Box(Modifier.padding(3.dp).width(44.dp).height(40.dp).clip(RoundedCornerShape(8.dp)).background(c.copy(alpha = 0.18f))
+        .border(1.dp, c, RoundedCornerShape(8.dp)).clickable { onClick() }, contentAlignment = Alignment.Center) {
+        Canvas(Modifier.width(22.dp).height(26.dp)) {
+            val w = size.width; val h = size.height
+            drawRoundRect(c, Offset(w * 0.32f, 0f), Size(w * 0.36f, h * 0.6f), androidx.compose.ui.geometry.CornerRadius(w * 0.18f))
+            drawArc(c, 0f, 180f, false, Offset(w * 0.15f, h * 0.25f), Size(w * 0.7f, h * 0.5f), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
+            drawRect(c, Offset(w * 0.47f, h * 0.75f), Size(w * 0.06f, h * 0.17f))
+            drawRect(c, Offset(w * 0.3f, h * 0.9f), Size(w * 0.4f, h * 0.06f))
+        }
+    }
+}
+
+/**
+ * TTT's VU meter (TTT_MINI overlay/MaRecordingLine.kt MaVuView), the same numbers: floor -54 dB, fast to rise and
+ * slow to fall (0.3), a peak mark falling 0.6 dB per 40 ms, green under -12, amber to -3, red above; dimmed when paused.
+ */
+@Composable
+private fun VuMeter(db: Float, dim: Boolean, modifier: Modifier) {
+    var smoothed by remember { mutableStateOf(-54f) }
+    var peak by remember { mutableStateOf(-54f) }
+    val level by androidx.compose.runtime.rememberUpdatedState(db.coerceIn(-54f, 0f))
+    LaunchedEffect(Unit) {
+        while (true) {
+            val d = level
+            smoothed = if (d > smoothed) d else smoothed + (d - smoothed) * 0.3f
+            peak = if (d > peak) d else (peak - 0.6f).coerceAtLeast(-54f)
+            kotlinx.coroutines.delay(40)
+        }
+    }
+    fun norm(x: Float) = ((x + 54f) / 54f).coerceIn(0f, 1f)
+    Canvas(modifier.padding(horizontal = 6.dp)) {
+        val w = size.width; val h = size.height; val r = androidx.compose.ui.geometry.CornerRadius(h / 2)
+        drawRoundRect(Color(0xFF2A2A2E), cornerRadius = r)
+        val n = norm(smoothed)
+        val col = when { smoothed > -3f -> Color(0xFF9B3B33); smoothed > -12f -> Color(0xFFF0883E); else -> Color(0xFF56D364) }
+        if (n > 0f) drawRoundRect(if (dim) col.copy(alpha = 0.35f) else col, size = Size(w * n, h), cornerRadius = r)
+        val p = norm(peak)
+        if (p > 0f) drawRect(Sand, Offset((w * p).coerceIn(2f, w - 2f) - 1.5f, 0f), Size(3f, h))
     }
 }

@@ -37,3 +37,9 @@
 > look at ttt my keyboard app how to transcribe using AssemblyAI
 
 **Status 7.11.2026:** v4 relative faders, always spoken; v5 spoken by name, RTA guard; v6 AssemblyAI Sync (TTT's way), 20 keys on the Pixel. Voice loop tested with ADAM + the Mac's mic + Whisper.
+
+> mixer itself has rta use that instead of recording with mobile phone microphone
+
+> next to prompt box add voice command icon when voice recording for commands is happening add pause button to stop it for a moment if needed , copy ui and vunmeter from ttt for voice inputs
+
+**Status:** v9 mic icon beside the box, recording bar with TTT's VU meter, PAUSE/RESUME, ■ send, ✕ cancel; the mixer's own RTA under research (MixPad's private protocol, TCP 51326 + UDP meters, DigiMixer).
