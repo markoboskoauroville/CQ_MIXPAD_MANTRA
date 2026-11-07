@@ -99,3 +99,5 @@
 "If that can be done better in Ableton Live, do it there."
 "And please test the app on this example."
 "Once audio is done, mix it in Ableton Live, in not in Ableton Live, inside Da Vinci Rizol replace the audio track. Mix 50% of the camera sound with 50% of the recording sound from recorder Export everything as YouTube quality and then upload to profile which is now open inside Chrome called Santoshi on the YouTube channel and make this video listed list only only by link"
+"Since the sound is MP3, that's not the best quality. In this Cambasada 7th November 21 is the Aberton project. Export the WAV file, open new Ableton project for syncing and sync this wave file. Actually, you have already audio on the timeline, nothing to be done. You just need to import camera sound and sync and export in this project, in this campassada 7 November 21. But if you want to test our application you can export this as WAVE and then work emulating this workflow that two WAVE files are imported and then they are aligned."
+"You decide the best."
