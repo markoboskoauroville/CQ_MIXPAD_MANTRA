@@ -91,3 +91,7 @@
 > Please con I am going to disconnect the mixer and phone in 15 minutes. You need to continue working. First sniff the the protocol, then uh log everything, and then create model of this mixer app inside my macOS as an application emulating the mixer itself and then you're going to continue to work in emulator only and now continue testing and sniffing for the next 15 minutes. Please work fast. Go through every uh function of the mixer and log it.
 
 **Status:** RTA DECODED (type 23 words 312..342, 31 bands); v27 uses the desk's own RTA; PROTOCOL.md. Not done yet: the Swift sniffer app, the mixer emulator, the full tour of every function.
+
+## 7.11.2026, 23:20 (hub session)
+"Please read in the manifest repository how we sync music based on music based on algorithms from Recognizing the music stamp. Or Shazam algorithm we already have. uh go into uh Da Vinci Resort and align these two music tracks.is the same music with two different recorders."
+(Resolve project AMBASADA, timeline mantra-20261107-182417_fixed: A1 the camera take, A2 indijska ambasada 7-nov-21.mp3)
