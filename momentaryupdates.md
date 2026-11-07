@@ -97,3 +97,5 @@
 (Resolve project AMBASADA, timeline mantra-20261107-182417_fixed: A1 the camera take, A2 indijska ambasada 7-nov-21.mp3)
 "If needed time stretch the Audio 2 to finish and start in the same moment as track from the video Audio 1."
 "If that can be done better in Ableton Live, do it there."
+"And please test the app on this example."
+"Once audio is done, mix it in Ableton Live, in not in Ableton Live, inside Da Vinci Rizol replace the audio track. Mix 50% of the camera sound with 50% of the recording sound from recorder Export everything as YouTube quality and then upload to profile which is now open inside Chrome called Santoshi on the YouTube channel and make this video listed list only only by link"
