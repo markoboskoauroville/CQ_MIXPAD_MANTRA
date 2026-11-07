@@ -95,6 +95,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var voice: Voice
     private lateinit var hear: Hear
     private lateinit var meters: Meters
+    private lateinit var recorder: Recorder
     private val feedback = Feedback()
     private var fbGuard by mutableStateOf(true)
     /** The desk's meters about 1.5 s ago, to see which microphone rose with a ringing tone. */
@@ -133,7 +134,19 @@ class MainActivity : ComponentActivity() {
         hear = Hear(this)
         link.start()
         meters = Meters({ link.host.value }, lifecycleScope, { log.add(0, it) }, filesDir)
-        meters.start()
+        // the meter session stays off until the CQ-12T's meter layout is decoded (it competed for the desk's port)
+        if (METERS_DECODED) meters.start()
+        recorder = Recorder({ link.host.value }, lifecycleScope) { log.add(0, it) }
+        recorder.start()
+        lifecycleScope.launch {     // a new take while a concert is on: written into that concert
+            var was = Recorder.State.UNKNOWN
+            recorder.state.collect { s ->
+                if (s == Recorder.State.RECORDING && was != Recorder.State.RECORDING) {
+                    kotlinx.coroutines.delay(1500); store.addTake(recorder.take.value.ifBlank { "take " + java.text.SimpleDateFormat("HH:mm", Locale.US).format(java.util.Date()) })
+                }
+                was = s
+            }
+        }
         lifecycleScope.launch {          // meter history, 4 per second, 2 s long
             while (true) {
                 kotlinx.coroutines.delay(250)
@@ -370,7 +383,7 @@ class MainActivity : ComponentActivity() {
             val now = System.currentTimeMillis()
             val min = 60_000L
             val auto = start - 10 * min
-            val recording = meters.rec.value == Meters.Rec.RECORDING
+            val recording = recorder.state.value == Recorder.State.RECORDING
             fun once(key: String, text: String) { if (said.add(key)) say(text) }
             val hhmm = java.text.SimpleDateFormat("HH:mm", Locale.US)
             if (now in (start - 30 * min) until (start - 15 * min)) once("r30", "The concert starts at ${hhmm.format(start)}. I start the multitrack recording by myself at ${hhmm.format(auto)}.")
@@ -378,9 +391,9 @@ class MainActivity : ComponentActivity() {
             if (now in auto until (start + 60 * min) && !recording) {
                 if (now - lastRecTry > 60_000) {
                     lastRecTry = now
-                    val sent = meters.startRecording()
+                    val sent = recorder.rec()
                     log.add(0, if (sent) "  ● REC sent to the desk" else "  ! REC could not be sent (no desk connection)")
-                    if (!sent || meters.rec.value != Meters.Rec.RECORDING) once("auto" + (now / 600_000), "Starting the concert recording on the SD card.")
+                    if (!sent || recorder.state.value != Recorder.State.RECORDING) once("auto" + (now / 600_000), "Starting the concert recording on the SD card.")
                 } else if (now - lastRecTry > 10_000 && now - lastRecAlert > 120_000) {
                     lastRecAlert = now
                     say("Attention. The concert is NOT recording. Press record in MixPad, multitrack, or on the desk.")
@@ -398,24 +411,101 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun RecChip() {
-        val st by meters.rec.collectAsState()
-        val since by meters.recSince.collectAsState()
-        var now by remember { mutableStateOf(System.currentTimeMillis()) }
-        LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(1000) } }
-        when (st) {
-            Meters.Rec.RECORDING -> {
-                val s = ((now - since) / 1000).coerceAtLeast(0)
-                Chip(String.format(Locale.US, "● REC %d:%02d:%02d", s / 3600, s / 60 % 60, s % 60), RecRed, filled = true) { confirmStop = true }
-            }
-            Meters.Rec.STOPPED -> Chip("● START REC", Grey) { if (meters.startRecording()) log.add(0, "  ● REC sent to the desk") else say("No connection to the desk for recording.") }
-            Meters.Rec.UNKNOWN -> Chip("REC ?", Amber) { if (meters.startRecording()) log.add(0, "  ● REC sent to the desk") else say("No connection to the desk for recording. Open CQ MixPad once, then come back.") }
+        val st by recorder.state.collectAsState()
+        val el by recorder.elapsed.collectAsState()
+        val conn by recorder.connected.collectAsState()
+        when {
+            st == Recorder.State.RECORDING -> Chip(String.format(Locale.US, "● REC %d:%02d:%02d", el / 3600, el / 60 % 60, el % 60), RecRed, filled = true) { confirmStop = true }
+            st == Recorder.State.STOPPED -> Chip("● START REC", Grey) { startRec() }
+            else -> Chip(if (conn) "REC …" else "REC: NO LINK", Amber) { startRec() }
         }
         val start = concertStart()
-        if (start != null && st != Meters.Rec.RECORDING) {
-            val auto = start - 600_000
-            if (now < auto) Text("  auto REC " + java.text.SimpleDateFormat("HH:mm", Locale.US).format(auto), color = Grey, fontSize = 11.sp)
+        if (start != null && st != Recorder.State.RECORDING && System.currentTimeMillis() < start - 600_000)
+            Text("  auto REC " + java.text.SimpleDateFormat("HH:mm", Locale.US).format(start - 600_000), color = Grey, fontSize = 11.sp)
+    }
+
+    private fun startRec() {
+        if (recorder.rec()) { log.add(0, "  ● REC sent to the desk"); say("Recording.") } else say("No link to the desk's recorder. It reconnects by itself in a moment.")
+    }
+
+    /** The RECORDING tab: everything about the SD multitrack, straight from the desk. */
+    @Composable
+    private fun RecordingPage(modifier: Modifier) {
+        val st by recorder.state.collectAsState()
+        val el by recorder.elapsed.collectAsState()
+        val left by recorder.remaining.collectAsState()
+        val take by recorder.take.collectAsState()
+        val conn by recorder.connected.collectAsState()
+        val concert by store.current.collectAsState()
+        fun hms(s: Long) = String.format(Locale.US, "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
+        Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(if (st == Recorder.State.RECORDING) Color(0xFF3A1010) else Panel).padding(16.dp)) {
+                Column {
+                    Text(when { st == Recorder.State.RECORDING -> "● RECORDING"; st == Recorder.State.STOPPED -> "STOPPED"; conn -> "WAITING FOR THE DESK"; else -> "NO LINK TO THE RECORDER" },
+                        color = when (st) { Recorder.State.RECORDING -> RecRed; Recorder.State.STOPPED -> Text1; else -> Amber }, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                    if (st == Recorder.State.RECORDING) Text(hms(el), color = Text1, fontSize = 44.sp, fontWeight = FontWeight.Bold)
+                    Text("SD multitrack (all armed tracks)" + (if (take.isNotBlank()) " · take $take" else ""), color = Grey, fontSize = 14.sp)
+                    if (left > 0) Text("card left: " + hms(left), color = Grey, fontSize = 14.sp)
+                }
+            }
+            Row(Modifier.padding(vertical = 8.dp)) {
+                if (st != Recorder.State.RECORDING) Chip("● START RECORDING", RecRed, filled = true) { startRec() }
+                else Chip("■ STOP", Grey) { confirmStop = true }
+            }
+            val start = concertStart()
+            Text("CONCERT", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(concert?.let { "${it.venue} · ${it.date}" } ?: "no concert chosen", color = Text1, fontSize = 15.sp)
+            if (start != null) {
+                val f = java.text.SimpleDateFormat("HH:mm", Locale.US)
+                Text("Santoshi at ${f.format(start)} · auto REC at ${f.format(start - 600_000)} (if the desk is not recording yet)", color = Text1, fontSize = 14.sp)
+                Text("reminders 30 and 15 min before; an alert every 2 min while it does not record; recording never stops by itself", color = Grey, fontSize = 12.sp)
+            }
+            store.programme()?.let { pr ->
+                Text("PROGRAMME", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                pr.split(";").forEach { Text(it.trim(), color = if (it.contains("Santoshi")) Cyan else Text1, fontSize = 13.sp) }
+            }
+            val takes = store.takes()
+            if (takes.isNotEmpty()) {
+                Text("TAKES OF THIS CONCERT", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+                takes.forEach { Text(it, color = Text1, fontSize = 13.sp) }
+            }
+            Text("The card is never formatted; every concert is added (named here by place and date).", color = Grey, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
         }
     }
+
+    /** The VIEW tab: which strips show, in which order (the screen only; the desk is not touched). */
+    @Composable
+    private fun ViewPage(modifier: Modifier, present: List<Cq.Src>) {
+        var order by remember { mutableStateOf(viewOrder(present)) }
+        var hidden by remember { mutableStateOf(viewHidden()) }
+        val labels by store.labels.collectAsState()
+        Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
+            Text("Show, hide and order the strips (only on this screen)", color = Grey, fontSize = 12.sp)
+            order.forEachIndexed { i, id ->
+                val l = labels[id]
+                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp).clip(RoundedCornerShape(6.dp)).background(Panel).padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Chip(if (id in hidden) "HIDDEN" else "SHOWN", if (id in hidden) Grey else Green, filled = id !in hidden) {
+                        hidden = if (id in hidden) hidden - id else hidden + id; saveView(order, hidden)
+                    }
+                    Text("$id  " + (l?.let { it.name.ifBlank { it.instrument } } ?: ""), color = Text1, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Chip("▲", Grey) { if (i > 0) { order = order.toMutableList().also { val x = it[i]; it[i] = it[i - 1]; it[i - 1] = x }; saveView(order, hidden) } }
+                    Chip("▼", Grey) { if (i < order.size - 1) { order = order.toMutableList().also { val x = it[i]; it[i] = it[i + 1]; it[i + 1] = x }; saveView(order, hidden) } }
+                }
+            }
+        }
+    }
+
+    private val viewPrefs by lazy { getSharedPreferences("view", MODE_PRIVATE) }
+    private fun viewOrder(present: List<Cq.Src>): List<String> {
+        val saved = viewPrefs.getString("order", "")!!.split(",").filter { it.isNotBlank() }
+        val ids = present.map { it.id }
+        return saved.filter { it in ids } + ids.filter { it !in saved }
+    }
+    private fun viewHidden(): Set<String> = viewPrefs.getString("hidden", "")!!.split(",").filter { it.isNotBlank() }.toSet()
+    private fun saveView(order: List<String>, hidden: Set<String>) {
+        viewPrefs.edit().putString("order", order.joinToString(",")).putString("hidden", hidden.joinToString(",")).apply(); viewTick++
+    }
+    private var viewTick by mutableStateOf(0)
 
     private fun resumeRta() { if (rtaWasOn) { rtaWasOn = false; toggleRta() } }
 
@@ -486,12 +576,19 @@ class MainActivity : ComponentActivity() {
             }
             // mixes
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                Chip("REC", if (mix == "REC") RecRed else RecRed.copy(alpha = 0.7f), filled = mix == "REC") { mix = "REC" }
                 for (m in listOf("MAIN", "OUT1", "OUT2", "OUT3", "OUT4", "OUT5", "OUT6", "FX1", "FX2")) Chip(m, if (m == mix) Cyan else Grey, filled = m == mix) { mix = m }
+                Chip("VIEW", if (mix == "VIEW") Cyan else Grey, filled = mix == "VIEW") { mix = "VIEW" }
             }
+            if (mix == "REC") RecordingPage(Modifier.weight(1f))
+            else if (mix == "VIEW") ViewPage(Modifier.weight(1f), present)
+            else {
             RtaStrip()
             // the faders
+            viewTick.hashCode()
+            val shown = viewOrder(present).filter { it !in viewHidden() }.mapNotNull { id -> present.firstOrNull { it.id == id } }
             Row(Modifier.weight(1f).fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 4.dp)) {
-                for (s in present) {
+                for (s in shown) {
                     val p = Cq.sendParam(s, mix) ?: continue
                     val l = labels[s.id]
                     val inMeters by meters.inputs.collectAsState()
@@ -512,6 +609,7 @@ class MainActivity : ComponentActivity() {
                     Strip(top = "DCA$d", sub = "", db = link.db(Cq.dcaLevelParam(d)), muted = link.muted(Cq.dcaMuteParam(d)), pan = null,
                         onDb = { link.setDb(Cq.dcaLevelParam(d), it) }, onMute = { link.setMute(Cq.dcaMuteParam(d), !link.muted(Cq.dcaMuteParam(d))) }, onPan = {})
                 }
+            }
             }
             // suggestions waiting for APPLY
             if (pending.isNotEmpty()) {
@@ -542,7 +640,7 @@ class MainActivity : ComponentActivity() {
                 Text("The SD card keeps everything recorded so far.", color = Grey, fontSize = 13.sp)
                 Row {
                     Chip("KEEP RECORDING", Green, filled = true) { confirmStop = false }
-                    Chip("STOP", RecRed) { confirmStop = false; meters.stopRecording(); log.add(0, "  ■ STOP sent to the desk") }
+                    Chip("STOP", RecRed) { confirmStop = false; recorder.stop(); log.add(0, "  ■ STOP sent to the desk") }
                 }
             }
         }

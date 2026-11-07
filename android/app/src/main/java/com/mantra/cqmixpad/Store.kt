@@ -91,7 +91,16 @@ class Store(ctx: Context) {
     fun startTime(): String? = current.value?.let { read(it.id).optString("start", "").ifBlank { null } }
     fun dateIso(): String? = current.value?.id?.substringBefore(" ")
 
-        /** The CQ scene this concert starts from (Scene 1 "Santoshi Mix" unless the concert says otherwise). */
+        fun programme(): String? = current.value?.let { read(it.id).optString("programme", "").ifBlank { null } }
+
+    /** SD takes recorded during this concert ("CQ-MT003 · 17:24"). */
+    fun takes(): List<String> = current.value?.let { c -> read(c.id).optJSONArray("takes")?.let { a -> (0 until a.length()).map { a.getString(it) } } } ?: emptyList()
+    fun addTake(name: String) {
+        val stamp = SimpleDateFormat("d.M.yyyy HH:mm", Locale.US).format(Date())
+        update { j -> (j.optJSONArray("takes") ?: JSONArray().also { j.put("takes", it) }).put("$name · $stamp") }
+    }
+
+    /** The CQ scene this concert starts from (Scene 1 "Santoshi Mix" unless the concert says otherwise). */
     fun baseScene(): Int = current.value?.let { read(it.id).optInt("scene", 1) } ?: 1
 
     /** This concert's stored mix: parameter → value. */

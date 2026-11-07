@@ -61,3 +61,11 @@
 > (the Embassy's programme: 16:30 arrival … 17:35–18:00 Performance by the Santoshi Kirtan band … 19:00 close)
 
 **Status:** v15 REC panel (the desk's own state, F7 12 12 0D), START / STOP-with-confirm, auto REC 10 min before the concert (17:25 tonight), reminders, alerts every 2 min while not recording. Arming per track: in MixPad (not in any known protocol).
+
+> please build in recording tab in app to monitor recorder
+
+> add tab to hide and show certain channel from views as well as rearrange them in the view only
+
+> when we record it is alway multichannel on sd card
+
+**Status:** v19 the recorder decoded on the desk itself (REC/STOP and state, elapsed, card left, take names: no registration needed), REC tab, VIEW tab; the meter session off until decoded.
