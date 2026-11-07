@@ -33,8 +33,8 @@ class Proxy(private val desk: () -> String, private val dir: File, private val s
             try {
                 ServerSocket().use { server ->
                     server.reuseAddress = true
-                    server.bind(InetSocketAddress("127.0.0.1", 51326)); server.soTimeout = 2000
-                    log("  proxy: listening on 127.0.0.1:51326 for CQ MixPad ($seconds s)")
+                    server.bind(InetSocketAddress(51326)); server.soTimeout = 2000
+                    log("  proxy: listening on :51326 (all interfaces) for CQ MixPad ($seconds s)")
                     while (isActive && System.currentTimeMillis() < until) {
                         val client = try { server.accept() } catch (_: java.net.SocketTimeoutException) { continue }
                         log("  proxy: CQ MixPad connected")
