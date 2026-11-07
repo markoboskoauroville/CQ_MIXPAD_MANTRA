@@ -98,6 +98,7 @@ class MainActivity : ComponentActivity() {
     private val meterHistory = ArrayDeque<Pair<FloatArray, FloatArray>>()
     private val fbCut = HashMap<Int, Double>()
     private var fbLast = 0L
+    private var fbLastHz = 0.0
 
     private val log = mutableStateListOf<String>()
     private val pending = mutableStateListOf<Brain.Action>()
@@ -140,8 +141,14 @@ class MainActivity : ComponentActivity() {
         rta.onSpectrum = { spec -> if (fbGuard) feedback.onSpectrum(spec)?.let { e -> runOnUiThread { onFeedback(e) } } }
         // the RTA candidate (type 23) saved every 2 s for decoding: files/rta23.bin, 760-byte records
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val f = java.io.File(filesDir, "rta23.bin")
-            while (true) { kotlinx.coroutines.delay(2000); meters.raw23?.let { if (f.length() < 3_000_000) f.appendBytes(it) } }
+            val f = java.io.File(filesDir, "rta23.bin"); val f8 = java.io.File(filesDir, "m8.bin")
+            var tick = 0
+            while (true) {
+                kotlinx.coroutines.delay(250); tick++
+                if (tick % 8 == 0) meters.raw23?.let { if (f.length() < 3_000_000) f.appendBytes(it) }
+                // raw input meters, 4 per second, a rolling 60 s (decoding the CQ-12T's meter order)
+                meters.raw8?.let { if (f8.length() > 640L * 240) f8.writeBytes(ByteArray(0)); f8.appendBytes(it) }
+            }
         }
         setContent { Screen() }
     }
@@ -304,7 +311,11 @@ class MainActivity : ComponentActivity() {
 
     /** A ringing tone: find the microphone on the desk's meters, pull it down 3 dB in the mix that rings, tell Marko. */
     private fun onFeedback(e: Feedback.Event) {
-        val now = System.currentTimeMillis(); if (now - fbLast < 2000) return; fbLast = now
+        val now = System.currentTimeMillis()
+        // one alert per tone: the same frequency (within 3 %) is not announced again for 10 s, any tone not within 4 s
+        if (now - fbLast < 4000) return
+        if (now - fbLast < 10000 && fbLastHz > 0 && kotlin.math.abs(e.hz - fbLastHz) < fbLastHz * 0.03) return
+        fbLast = now; fbLastHz = e.hz
         val hz = if (e.hz >= 1000) String.format(Locale.US, "%.1f kilohertz", e.hz / 1000) else "${e.hz.toInt()} hertz"
         val before = meterHistory.firstOrNull()
         val mix = if (before != null) Feedback.ringingMix(before.second, meters.outputs.value) else "MAIN"

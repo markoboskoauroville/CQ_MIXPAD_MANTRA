@@ -32,6 +32,8 @@ class Meters(private val host: () -> String, private val scope: CoroutineScope, 
     val alive = MutableStateFlow(false)
     /** The raw RTA-candidate frame (type 23), kept for decoding. */
     @Volatile var raw23: ByteArray? = null
+    /** The last raw input-meter frame (type 8), for decoding the CQ-12T's layout. */
+    @Volatile var raw8: ByteArray? = null
     private var job: Job? = null
     private var frames = 0; private var moving = false
     private var last8: ByteArray? = null
@@ -121,6 +123,7 @@ class Meters(private val host: () -> String, private val scope: CoroutineScope, 
                     val a = FloatArray(len / 20) { db(u16(b, o + it * 20 + 14)) }
                     inputs.value = a
                     val snap = b.copyOfRange(o, o + len)
+                    raw8 = snap
                     if (last8 != null && !snap.contentEquals(last8)) moving = true
                     last8 = snap
                     if (++frames == 200) log(if (moving) "  meters: live (input meters move)" else "  meters: frames arrive but do not move")

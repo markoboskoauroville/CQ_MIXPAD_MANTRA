@@ -53,13 +53,9 @@ class Feedback(private val rate: Int = 48000, private val n: Int = 8192) {
          * Null when nobody rose by 3 dB (then it is not one microphone, or the meters are off).
          */
         fun culprit(before: FloatArray, now: FloatArray, candidates: List<Int>): Int? {
-            var best = -1; var rise = 3f
-            for (i in candidates) {
-                if (i >= before.size || i >= now.size) continue
-                val r = now[i] - before[i]
-                if (r > rise && now[i] > -40f) { rise = r; best = i }
-            }
-            return best.takeIf { it >= 0 }
+            // the input that rose by 3 dB or more AND is now the loudest of those that rose
+            val rose = candidates.filter { it < before.size && it < now.size && now[it] - before[it] >= 3f && now[it] > -40f }
+            return rose.maxByOrNull { now[it] }
         }
 
         /** Which output rings: the output (0..5 = Out1..6, 6/7 = Main L/R) that rose most; "MAIN" or "OUTn". */
