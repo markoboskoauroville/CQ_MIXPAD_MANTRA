@@ -70,10 +70,12 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         Socket().use { it.connect(InetSocketAddress(ip, Cq.PORT), ms) }; true
     } catch (_: Exception) { false }
 
-    /** "10.173.135" for every IPv4 /24 on an eth or usb interface. */
+    /** "10.173.135" for every IPv4 /24 on the cable (eth/usb) and on Wi-Fi (wlan). */
     private fun ethernetPrefixes(): List<String> = try {
         NetworkInterface.getNetworkInterfaces().toList()
-            .filter { it.isUp && (it.name.startsWith("eth") || it.name.startsWith("usb")) }
+            // the cable first (eth/usb), then Wi-Fi (wlan): the mixer can be on either (Marko, 7.11.2026)
+            .filter { it.isUp && (it.name.startsWith("eth") || it.name.startsWith("usb") || it.name.startsWith("wlan")) }
+            .sortedBy { if (it.name.startsWith("wlan")) 1 else 0 }
             .flatMap { it.interfaceAddresses }
             .mapNotNull { (it.address as? Inet4Address)?.hostAddress?.substringBeforeLast('.') }
             .distinct()

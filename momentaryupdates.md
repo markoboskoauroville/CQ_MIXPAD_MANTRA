@@ -69,3 +69,11 @@
 > when we record it is alway multichannel on sd card
 
 **Status:** v19 the recorder decoded on the desk itself (REC/STOP and state, elapsed, card left, take names: no registration needed), REC tab, VIEW tab; the meter session off until decoded.
+
+> please don't forget to display a time of recording, how long it is recorded
+
+> Please, inside the recording tab, add a badge for each channel. And so I need to see— when I see the time recording confirmed, great, but also which channels are armed for recording.
+
+> After you finish this action, be ready. I'm going to disconnect the cable and you need to run the tests through Wi-Fi because I'm going to connect to my Wi-Fi network this mixer and you need to truly test it through that. So finish the last testings and give me a message waiting for reconnection.
+
+**Status:** v24 armed badges (decoded: 16-bit mask 100 bytes from the end of the full dump), the app finds the mixer on Wi-Fi too. Armed 10 of 16.

@@ -459,6 +459,23 @@ class MainActivity : ComponentActivity() {
                     if (refused >= 2) Text("The desk refuses the recorder link: CQ MixPad is holding it. Close CQ MixPad (swipe it away).", color = Amber, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 }
             }
+            // the armed tracks, a badge each (Marko, 7.11.2026: "which channels are armed for recording")
+            val armed by recorder.armed.collectAsState()
+            val lab by store.labels.collectAsState()
+            Text("ARMED TRACKS" + (armed?.let { " · " + Integer.bitCount(it) + " of 16" } ?: " · waiting for the desk"), color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp))
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 4.dp)) {
+                for (n in 1..16) {
+                    val on = armed?.let { (it shr (n - 1)) and 1 == 1 }
+                    val who = lab["Ip$n"]?.let { it.name.ifBlank { it.instrument.substringBefore(",").take(8) } } ?: ""
+                    Column(Modifier.padding(2.dp).width(58.dp).clip(RoundedCornerShape(6.dp))
+                        .background(when (on) { true -> RecRed.copy(alpha = 0.85f); false -> Color(0xFF2A2A2E); null -> Panel })
+                        .padding(vertical = 5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("$n", color = if (on == true) Color.White else Grey, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Text(if (on == true) "● REC" else "off", color = if (on == true) Color.White else Grey, fontSize = 10.sp)
+                        Text(who, color = if (on == true) Color.White else Grey, fontSize = 9.sp, maxLines = 1)
+                    }
+                }
+            }
             Row(Modifier.padding(vertical = 8.dp)) {
                 if (st != Recorder.State.RECORDING) Chip("● START RECORDING", RecRed, filled = true) { startRec() }
                 if (st != Recorder.State.STOPPED) Chip("■ STOP", Grey) { confirmStop = true }

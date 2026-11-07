@@ -27,6 +27,8 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
     val remaining = MutableStateFlow(0L)        // seconds of SD left, from the desk
     val take = MutableStateFlow("")             // the take being recorded / last one
     val connected = MutableStateFlow(false)
+    /** Armed SD tracks, bit 0 = track 1; null until the desk has sent its full data. */
+    val armed = MutableStateFlow<Int?>(null)
     @Volatile private var out: OutputStream? = null
     private var job: Job? = null
 
@@ -57,6 +59,9 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
         val o = s.getOutputStream(); val i = s.getInputStream()
         o.write(hello); o.flush(); delay(100); o.write(f(1)); o.flush(); delay(100); o.write(f(12, 2, 0)); o.flush()
         out = o; connected.value = true; refused.value = 0
+        val dump = scope.launch(Dispatchers.IO) {     // ask for the full data (armed tracks) now and every minute
+            while (isActive) { delay(1500); try { synchronized(this@Recorder) { o.write(f(3)); o.flush() } } catch (_: Exception) { break }; delay(58_500) }
+        }
         log("  recorder: connected")
         val beat = scope.launch(Dispatchers.IO) {
             while (isActive) { delay(2000); try { synchronized(this@Recorder) { o.write(hello); o.flush() } } catch (_: Exception) { break } }
@@ -71,9 +76,12 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
                     val type = h[0].toInt() and 0xFF
                     val len = (h[1].toInt() and 0xFF) or ((h[2].toInt() and 0xFF) shl 8) or ((h[3].toInt() and 0xFF) shl 16) or ((h[4].toInt() and 0xFF) shl 24)
                     // a 0x7F inside a message is not a frame: an impossible type or length means resync from the next byte
-                    if (type > 40 || len < 0 || len > 4096) { r.reset(); continue }
+                    if (type > 40 || len < 0 || len > (if (type == 4) 200_000 else 4096)) { r.reset(); continue }
                     val d = ByteArray(len); readFully(r, d)
                     if (type == 7) onMessage(d)
+                    // the full data dump: the armed tracks are a 16-bit mask 100 bytes from its end (measured 7.11.2026:
+                    // ff 03 = tracks 1-10, ff 07 = 1-11)
+                    if (type == 4 && len > 200) armed.value = (d[len - 100].toInt() and 0xFF) or ((d[len - 99].toInt() and 0xFF) shl 8)
                 } else if (b0 == 0xF7) {
                     // fixed 8-byte messages (as measured on the CQ-12T, 7.11.2026)
                     val d = ByteArray(7); readFully(r, d)
@@ -83,7 +91,7 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
                     }
                 }
             }
-        } finally { beat.cancel(); s.close() }
+        } finally { beat.cancel(); dump.cancel(); s.close() }
     }
 
     private fun readFully(r: java.io.InputStream, b: ByteArray) {
