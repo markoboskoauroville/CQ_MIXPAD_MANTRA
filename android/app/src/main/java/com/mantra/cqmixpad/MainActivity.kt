@@ -83,6 +83,9 @@ private val Sand = Color(0xFFF2DDB4)      // TTT's ink
 
 /** The CQ-12T's meter frames arrive but their layout is not decoded (7.11.2026): hidden until it is. */
 private const val METERS_DECODED = false
+
+/** The mixer's own RTA is not decoded (7.11.2026). Until it is, nothing is mixed automatically from the Krishna Das reference. */
+private const val RTA_DECODED = false
 private val RecRed = Color(0xFFEF4444)    // TTT's recording red
 
 class MainActivity : ComponentActivity() {
@@ -698,7 +701,8 @@ class MainActivity : ComponentActivity() {
                     if (fbGuard && !rtaOn) toggleRta()
                     say(if (fbGuard) "Feedback guard on." else "Feedback guard off.")
                 }
-                Chip("MATCH KD", Amber) {
+                Chip("MATCH KD", if (RTA_DECODED) Amber else Grey) {
+                    if (!RTA_DECODED) { say("Matching to the reference is off. I cannot read the mixer's real-time analyser yet, so I will not mix from a reference."); return@Chip }
                     if (rtaJob?.isActive != true) { say("Listening to the room. Tap match again in ten seconds."); toggleRta(); return@Chip }
                     if (rta.seconds() < 6) { say("Still listening, ${6 - rta.seconds()} more seconds."); return@Chip }
                     if (rta.meanLevel() < -55) { say("I hear no music in the room, nothing to match."); return@Chip }
