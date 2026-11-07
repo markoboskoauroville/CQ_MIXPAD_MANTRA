@@ -78,7 +78,8 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
                     // fixed 8-byte messages (as measured on the CQ-12T, 7.11.2026)
                     val d = ByteArray(7); readFully(r, d)
                     if ((d[0].toInt() and 0xFF) == 0x12 && (d[1].toInt() and 0xFF) == 0x12 && (d[2].toInt() and 0xFF) == 0x0D) {
-                        when (d[3].toInt() and 0x0F) { 5 -> setState(State.RECORDING); 0 -> setState(State.STOPPED) }
+                        // its codes differ between firmwares and flicker at transitions: logged only, the 55-byte status decides
+                        log(String.format("  recorder: desk state code %02x", d[3].toInt() and 0xFF))
                     }
                 }
             }
@@ -92,10 +93,14 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
         ((d[o + 2].toLong() and 0xFF) shl 16) or ((d[o + 3].toLong() and 0xFF) shl 24)
     private fun name(d: ByteArray, o: Int, max: Int) = String(d, o, minOf(max, d.size - o), Charsets.US_ASCII).substringBefore('\u0000')
 
+    private var lastRec = false; private var same = 0
+
     private fun onMessage(d: ByteArray) {
         if (d.size == 55 && (d[0].toInt() and 0xFF) == 0x11 && (d[1].toInt() and 0xFF) == 0x12 && (d[2].toInt() and 0xFF) == 0x1C) {
             val rec = (d[7].toInt() and 0xFF) == 0x40
-            setState(if (rec) State.RECORDING else State.STOPPED)
+            // three status messages in a row (about 0.75 s) before the state changes: no flicker
+            if (rec == lastRec) same++ else { lastRec = rec; same = 1 }
+            if (same >= 3 || state.value == State.UNKNOWN && same >= 2) setState(if (rec) State.RECORDING else State.STOPPED)
             if (!rec) {
                 val n = name(d, 7, 4) + name(d, 12, 4)                  // "CQ-M" + "002" (the desk splits it)
                 if (n.startsWith("CQ")) take.value = n.replace("CQ-M", "CQ-MT")
