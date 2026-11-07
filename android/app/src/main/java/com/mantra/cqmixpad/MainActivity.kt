@@ -163,6 +163,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 val rtaText = if (withRta || rtaJob?.isActive == true) rta.text() else null
+                held.clear()
                 val t0 = System.currentTimeMillis()
                 val a = brain.ask(text, deskText(), rtaText, link.present.value.map { it.id }, effortHigh = withRta)
                 log.add(0, String.format(Locale.US, "  (Sonnet %.1f s)", (System.currentTimeMillis() - t0) / 1000.0))
@@ -178,10 +179,10 @@ class MainActivity : ComponentActivity() {
                 val done = a.actions.filter { it.name != "note_for_marko" && it.name != "remember" }.map { it.text() }
                 val notes = a.actions.count { it.name == "note_for_marko" }
                 when {
-                    a.say.isNotBlank() -> say(a.say)
+                    a.say.isNotBlank() -> say((a.say + " " + held.joinToString(" ")).trim())
                     withRta && pending.isNotEmpty() -> say("I suggest ${pending.size} moves. Tap apply to make them.")
                     done.isNotEmpty() -> say(a.actions.filter { it.name != "note_for_marko" && it.name != "remember" }.map { it.spoken(store.labels.value) }.filter { it.isNotBlank() }
-                        .joinToString(", ").replaceFirstChar { it.uppercase() } + if (notes > 0) ". And $notes step${if (notes > 1) "s" else ""} for you in MixPad." else ".")
+                        .joinToString(", ").replaceFirstChar { it.uppercase() } + (if (notes > 0) ". And $notes step${if (notes > 1) "s" else ""} for you in MixPad." else ".") + (if (held.isNotEmpty()) " " + held.joinToString(" ") else ""))
                     notes > 0 -> say("$notes step${if (notes > 1) "s" else ""} for you in MixPad, in orange.")
                     else -> say("Nothing to change.")
                 }
@@ -192,6 +193,9 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Carries out one action; the safety limits are here, not only in the prompt. */
+    /** Moves the safety limit changed, said after the answer so the voice never claims what the desk did not do. */
+    private val held = ArrayList<String>()
+
     private fun apply(a: Brain.Action) {
         val i = a.input
         val ch = i.optString("channel"); val mix = i.optString("mix", "MAIN").ifBlank { "MAIN" }
@@ -207,7 +211,11 @@ class MainActivity : ComponentActivity() {
                 var target = if (a.name == "set_level") i.optDouble("db") else (if (now <= Cq.MIN_DB) -40.0 else now) + i.optDouble("delta_db")
                 if (target.isNaN()) return
                 target = target.coerceIn(Cq.MIN_DB, Cq.MAX_DB)
-                if (now > Cq.MIN_DB && target - now > 6.0) { target = now + 6.0; log.add(0, "  ! limited to +6 dB at once") }
+                if (now > Cq.MIN_DB && target - now > 6.0) {
+                    target = now + 6.0; log.add(0, "  ! limited to +6 dB at once")
+                    val who = store.labels.value[ch]?.let { it.name.ifBlank { it.instrument.substringBefore(",") } } ?: ch
+                    held += "I held $who to plus 6 dB at once, for safety, now ${Cq.dbText(target).replace("+", "plus ").replace("-", "minus ")} dB."
+                }
                 link.setDb(p, target)
                 log.add(0, "  ✓ ${a.text()}")
             }
