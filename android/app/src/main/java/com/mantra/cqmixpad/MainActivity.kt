@@ -385,6 +385,8 @@ class MainActivity : ComponentActivity() {
             val auto = start - 10 * min
             val recording = recorder.state.value == Recorder.State.RECORDING
             fun once(key: String, text: String) { if (said.add(key)) say(text) }
+            if (recorder.refused.value >= 3 && !recording && System.currentTimeMillis() > (concertStart() ?: Long.MAX_VALUE) - 40 * 60_000)
+                once("mixpad" + (System.currentTimeMillis() / 300_000), "Close CQ MixPad. It is holding the desk's recorder, so I cannot press record.")
             val hhmm = java.text.SimpleDateFormat("HH:mm", Locale.US)
             if (now in (start - 30 * min) until (start - 15 * min)) once("r30", "The concert starts at ${hhmm.format(start)}. I start the multitrack recording by myself at ${hhmm.format(auto)}.")
             if (now in (start - 15 * min) until auto) once("r15", "Fifteen minutes to the concert. Recording starts at ${hhmm.format(auto)}.")
@@ -412,7 +414,10 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun RecChip() {
         val st by recorder.state.collectAsState()
-        val el by recorder.elapsed.collectAsState()
+        val since by recorder.since.collectAsState()
+        var now by remember { mutableStateOf(System.currentTimeMillis()) }
+        LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(1000) } }
+        val el = if (since > 0) (now - since) / 1000 else 0L
         val conn by recorder.connected.collectAsState()
         when {
             st == Recorder.State.RECORDING -> Chip(String.format(Locale.US, "● REC %d:%02d:%02d", el / 3600, el / 60 % 60, el % 60), RecRed, filled = true) { confirmStop = true }
@@ -432,7 +437,11 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun RecordingPage(modifier: Modifier) {
         val st by recorder.state.collectAsState()
-        val el by recorder.elapsed.collectAsState()
+        val since by recorder.since.collectAsState()
+        var now by remember { mutableStateOf(System.currentTimeMillis()) }
+        LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(1000) } }
+        val el = if (since > 0) (now - since) / 1000 else 0L
+        val refused by recorder.refused.collectAsState()
         val left by recorder.remaining.collectAsState()
         val take by recorder.take.collectAsState()
         val conn by recorder.connected.collectAsState()
@@ -445,12 +454,13 @@ class MainActivity : ComponentActivity() {
                         color = when (st) { Recorder.State.RECORDING -> RecRed; Recorder.State.STOPPED -> Text1; else -> Amber }, fontSize = 26.sp, fontWeight = FontWeight.Bold)
                     if (st == Recorder.State.RECORDING) Text(hms(el), color = Text1, fontSize = 44.sp, fontWeight = FontWeight.Bold)
                     Text("SD multitrack (all armed tracks)" + (if (take.isNotBlank()) " · take $take" else ""), color = Grey, fontSize = 14.sp)
-                    if (left > 0) Text("card left: " + hms(left), color = Grey, fontSize = 14.sp)
+                    if (left > 0) Text("card left: about " + hms(left), color = Grey, fontSize = 14.sp)
+                    if (refused >= 2) Text("The desk refuses the recorder link: CQ MixPad is holding it. Close CQ MixPad (swipe it away).", color = Amber, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Row(Modifier.padding(vertical = 8.dp)) {
                 if (st != Recorder.State.RECORDING) Chip("● START RECORDING", RecRed, filled = true) { startRec() }
-                else Chip("■ STOP", Grey) { confirmStop = true }
+                if (st != Recorder.State.STOPPED) Chip("■ STOP", Grey) { confirmStop = true }
             }
             val start = concertStart()
             Text("CONCERT", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold)

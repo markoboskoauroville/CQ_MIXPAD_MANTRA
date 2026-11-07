@@ -36,7 +36,10 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
             while (isActive) {
                 val ip = host()
                 if (ip.isBlank()) { delay(2000); continue }
-                try { session(ip) } catch (e: Exception) { log("  recorder: ${e.message}") }
+                try { session(ip); refused.value = 0 } catch (e: Exception) {
+                    if (e is java.net.SocketTimeoutException || e.message?.contains("failed to connect") == true) refused.value = refused.value + 1
+                    log("  recorder: ${e.message}")
+                }
                 connected.value = false; out = null; state.value = State.UNKNOWN
                 delay(2000)
             }
@@ -53,7 +56,7 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
         val s = Socket(); s.connect(InetSocketAddress(ip, 51326), 3000); s.soTimeout = 6000; s.tcpNoDelay = true
         val o = s.getOutputStream(); val i = s.getInputStream()
         o.write(hello); o.flush(); delay(100); o.write(f(1)); o.flush(); delay(100); o.write(f(12, 2, 0)); o.flush()
-        out = o; connected.value = true
+        out = o; connected.value = true; refused.value = 0
         log("  recorder: connected")
         val beat = scope.launch(Dispatchers.IO) {
             while (isActive) { delay(2000); try { synchronized(this@Recorder) { o.write(hello); o.flush() } } catch (_: Exception) { break } }
@@ -63,18 +66,20 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
             while (true) {
                 val b0 = r.read(); if (b0 < 0) throw java.io.IOException("the desk closed the recorder link")
                 if (b0 == 0x7F) {
+                    r.mark(8)
                     val h = ByteArray(5); readFully(r, h)
                     val type = h[0].toInt() and 0xFF
-                    val len = (h[1].toInt() and 0xFF) or ((h[2].toInt() and 0xFF) shl 8) or ((h[3].toInt() and 0xFF) shl 16)
+                    val len = (h[1].toInt() and 0xFF) or ((h[2].toInt() and 0xFF) shl 8) or ((h[3].toInt() and 0xFF) shl 16) or ((h[4].toInt() and 0xFF) shl 24)
+                    // a 0x7F inside a message is not a frame: an impossible type or length means resync from the next byte
+                    if (type > 40 || len < 0 || len > 4096) { r.reset(); continue }
                     val d = ByteArray(len); readFully(r, d)
                     if (type == 7) onMessage(d)
                 } else if (b0 == 0xF7) {
+                    // fixed 8-byte messages (as measured on the CQ-12T, 7.11.2026)
                     val d = ByteArray(7); readFully(r, d)
                     if ((d[0].toInt() and 0xFF) == 0x12 && (d[1].toInt() and 0xFF) == 0x12 && (d[2].toInt() and 0xFF) == 0x0D) {
                         when (d[3].toInt() and 0x0F) { 5 -> setState(State.RECORDING); 0 -> setState(State.STOPPED) }
                     }
-                    // a 9-byte F7 (12 xx 23 / 13 xx 16): one more byte
-                    if (((d[0].toInt() and 0xFF) == 0x12 && (d[2].toInt() and 0xFF) == 0x23) || ((d[0].toInt() and 0xFF) == 0x13 && (d[2].toInt() and 0xFF) == 0x16)) r.read()
                 }
             }
         } finally { beat.cancel(); s.close() }
@@ -91,17 +96,23 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
         if (d.size == 55 && (d[0].toInt() and 0xFF) == 0x11 && (d[1].toInt() and 0xFF) == 0x12 && (d[2].toInt() and 0xFF) == 0x1C) {
             val rec = (d[7].toInt() and 0xFF) == 0x40
             setState(if (rec) State.RECORDING else State.STOPPED)
-            if (rec) { elapsed.value = u32(d, 16) } else {
+            if (!rec) {
                 val n = name(d, 7, 4) + name(d, 12, 4)                  // "CQ-M" + "002" (the desk splits it)
                 if (n.startsWith("CQ")) take.value = n.replace("CQ-M", "CQ-MT")
             }
-            remaining.value = u32(d, 20)
+            remaining.value = (u32(d, 20) * 1.98).toLong()      // calibrated against MixPad's "Remaining" (7.11.2026)
         } else if (d.size == 283 && (d[0].toInt() and 0xFF) == 0x11 && (d[1].toInt() and 0xFF) == 0x12) {
             val n = name(d, 27, 16); if (n.startsWith("CQ-MT") && state.value == State.RECORDING) take.value = n
         }
     }
 
+    /** When the desk was first seen recording: the take's time is counted here (the desk's own counter is not the take's). */
+    val since = MutableStateFlow(0L)
+    /** Connect attempts that failed in a row (CQ MixPad holding the desk's one private link). */
+    val refused = MutableStateFlow(0)
+
     private fun setState(s: State) {
+        if (s == State.RECORDING && state.value != State.RECORDING) since.value = System.currentTimeMillis()
         if (s != state.value) log("  recorder: the desk is ${if (s == State.RECORDING) "RECORDING" else "stopped"}")
         state.value = s
     }
