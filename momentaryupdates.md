@@ -96,3 +96,4 @@
 "Please read in the manifest repository how we sync music based on music based on algorithms from Recognizing the music stamp. Or Shazam algorithm we already have. uh go into uh Da Vinci Resort and align these two music tracks.is the same music with two different recorders."
 (Resolve project AMBASADA, timeline mantra-20261107-182417_fixed: A1 the camera take, A2 indijska ambasada 7-nov-21.mp3)
 "If needed time stretch the Audio 2 to finish and start in the same moment as track from the video Audio 1."
+"If that can be done better in Ableton Live, do it there."
