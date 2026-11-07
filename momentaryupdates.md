@@ -102,3 +102,5 @@
 "Since the sound is MP3, that's not the best quality. In this Cambasada 7th November 21 is the Aberton project. Export the WAV file, open new Ableton project for syncing and sync this wave file. Actually, you have already audio on the timeline, nothing to be done. You just need to import camera sound and sync and export in this project, in this campassada 7 November 21. But if you want to test our application you can export this as WAVE and then work emulating this workflow that two WAVE files are imported and then they are aligned."
 "You decide the best."
 "I am leaving you unintended now. Do everything. In your own autonomy, and don't uh ask any questions, you finish by yourself."
+"You are going to upload concept once you fix synchronization. Synchronization needs to be fixed inside Ableton Live, pushing every 20 seconds audio to match with band markers."
+(the YouTube upload was stopped by Marko before any file was chosen)
