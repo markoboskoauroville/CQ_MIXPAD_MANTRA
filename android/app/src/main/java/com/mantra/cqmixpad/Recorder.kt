@@ -56,12 +56,23 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
         val b = ByteArray(6 + d.size); b[0] = 0x7F; b[1] = type.toByte(); b[2] = d.size.toByte()
         d.forEachIndexed { i, v -> b[6 + i] = v.toByte() }; return b
     }
-    private val hello = f(0, 0x96, 0xCF)
+    /** The desk's own RTA (decoded 7.11.2026 by the man-in-the-middle on the Mac): 31 one-third-octave bands,
+     *  20 Hz .. 20 kHz, dB = (raw - 0x8000) / 256, floor -110; in the UDP meter message type 23 (760 bytes), words
+     *  312..342 (u16 LE). Switched on by F7 2F 2F 0F 00 38 01 00 (Main LR PEQ, RTA On). Null until it streams. */
+    val rta = MutableStateFlow<FloatArray?>(null)
+    @Volatile var rtaAt = 0L
 
     private suspend fun session(ip: String) {
+        // the meter stream comes over UDP to the port we name in the handshake: one session carries recorder AND RTA,
+        // because the desk takes only one private-protocol client at a time
+        val udp = java.net.DatagramSocket(0); udp.soTimeout = 1000
+        val myPort = udp.localPort
+        val hello = f(0, myPort and 0xFF, myPort shr 8)
         val s = Socket(); s.connect(InetSocketAddress(ip, 51326), 3000); s.soTimeout = 6000; s.tcpNoDelay = true
         val o = s.getOutputStream(); val i = s.getInputStream()
         o.write(hello); o.flush(); delay(100); o.write(f(1)); o.flush(); delay(100); o.write(f(12, 2, 0)); o.flush()
+        delay(100); o.write(byteArrayOf(0xF7.toByte(), 0x2F, 0x2F, 0x0F, 0x00, 0x38, 0x01, 0x00)); o.flush()   // RTA on
+        val udpJob = scope.launch(Dispatchers.IO) { meterLoop(udp, ip) }
         out = o; connected.value = true; refused.value = 0
         val dump = scope.launch(Dispatchers.IO) {     // ask for the full data (armed tracks) now and every minute
             while (isActive) { delay(1500); try { synchronized(this@Recorder) { o.write(f(3)); o.flush() } } catch (_: Exception) { break }; delay(58_500) }
@@ -95,7 +106,35 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
                     }
                 }
             }
-        } finally { beat.cancel(); dump.cancel(); s.close() }
+        } finally { beat.cancel(); dump.cancel(); udpJob.cancel(); s.close(); udp.close() }
+    }
+
+    /** Keep-alives to the desk's UDP port 51324 every 2.5 s; type 23 frames carry the RTA. */
+    private suspend fun meterLoop(udp: java.net.DatagramSocket, ip: String) {
+        val desk = InetSocketAddress(ip, 51324)
+        val ka = f(5)
+        val keep = scope.launch(Dispatchers.IO) {
+            while (isActive) { try { udp.send(java.net.DatagramPacket(ka, ka.size, desk)) } catch (_: Exception) {}; delay(2500) }
+        }
+        try {
+            val buf = ByteArray(8192)
+            while (scope.isActive) {
+                val p = java.net.DatagramPacket(buf, buf.size)
+                try { udp.receive(p) } catch (_: java.net.SocketTimeoutException) { continue } catch (_: Exception) { break }
+                var j = 0; val n = p.length
+                while (j + 6 <= n && buf[j] == 0x7F.toByte()) {
+                    val type = buf[j + 1].toInt() and 0xFF
+                    val len = (buf[j + 2].toInt() and 0xFF) or ((buf[j + 3].toInt() and 0xFF) shl 8)
+                    val o = j + 6
+                    if (len < 0 || o + len > n) break
+                    if (type == 23 && len >= 343 * 2) {
+                        rta.value = FloatArray(31) { k -> val w = o + (312 + k) * 2; val raw = (buf[w].toInt() and 0xFF) or ((buf[w + 1].toInt() and 0xFF) shl 8); (raw - 0x8000) / 256f }
+                        rtaAt = System.currentTimeMillis()
+                    }
+                    j = o + len
+                }
+            }
+        } finally { keep.cancel() }
     }
 
     private fun readFully(r: java.io.InputStream, b: ByteArray) {

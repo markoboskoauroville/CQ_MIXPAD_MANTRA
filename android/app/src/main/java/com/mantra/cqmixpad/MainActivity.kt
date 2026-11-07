@@ -85,7 +85,7 @@ private val Sand = Color(0xFFF2DDB4)      // TTT's ink
 private const val METERS_DECODED = false
 
 /** The mixer's own RTA is not decoded (7.11.2026). Until it is, nothing is mixed automatically from the Krishna Das reference. */
-private const val RTA_DECODED = false
+private const val RTA_DECODED = true   // the desk's RTA, decoded 7.11.2026 (Recorder.rta)
 private val RecRed = Color(0xFFEF4444)    // TTT's recording red
 
 class MainActivity : ComponentActivity() {
@@ -141,6 +141,8 @@ class MainActivity : ComponentActivity() {
         if (METERS_DECODED) meters.start()
         recorder = Recorder({ link.host.value }, lifecycleScope) { log.add(0, it) }
         recorder.startsStore = getSharedPreferences("takes", MODE_PRIVATE)
+        // the desk's RTA feeds the RTA strip (the phone microphone only when the desk does not stream)
+        lifecycleScope.launch { recorder.rta.collect { b -> if (b != null) { rta.feedDesk(b); if (!rtaOn) rtaOn = true } } }
         recorder.start()
         lifecycleScope.launch {     // a new take while a concert is on: written into that concert
             var was = Recorder.State.UNKNOWN
@@ -541,6 +543,7 @@ class MainActivity : ComponentActivity() {
     private fun resumeRta() { if (rtaWasOn) { rtaWasOn = false; toggleRta() } }
 
     private fun toggleRta() {
+        if (System.currentTimeMillis() - recorder.rtaAt < 3000) { rtaOn = true; return }   // the desk's RTA is the source
         if (rtaJob?.isActive == true) { rta.stop(); rtaJob = null; rtaOn = false }
         else if (micOk) { rta.reset(); rtaJob = lifecycleScope.launch { rta.run() }; rtaOn = true }
         else openAppSettings()
@@ -703,9 +706,9 @@ class MainActivity : ComponentActivity() {
                 }
                 Chip("MATCH KD", if (RTA_DECODED) Amber else Grey) {
                     if (!RTA_DECODED) { say("Matching to the reference is off. I cannot read the mixer's real-time analyser yet, so I will not mix from a reference."); return@Chip }
-                    if (rtaJob?.isActive != true) { say("Listening to the room. Tap match again in ten seconds."); toggleRta(); return@Chip }
-                    if (rta.seconds() < 6) { say("Still listening, ${6 - rta.seconds()} more seconds."); return@Chip }
-                    if (rta.meanLevel() < -55) { say("I hear no music in the room, nothing to match."); return@Chip }
+
+                    if (System.currentTimeMillis() - recorder.rtaAt > 3000) { say("The mixer's analyser is not streaming. I will not match without it."); return@Chip }
+                    if (rta.meanLevel() < -60) { say("The main mix is silent, nothing to match."); return@Chip }
                     command("Compare the RTA with the Krishna Das profile and suggest how to fit the mix, vocals in the first plan.", fromVoice = false, withRta = true)
                 }
             }

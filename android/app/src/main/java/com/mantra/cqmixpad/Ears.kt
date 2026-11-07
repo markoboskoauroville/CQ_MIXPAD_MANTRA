@@ -97,11 +97,11 @@ class Rta {
     fun text(): String {
         val a = average()
         return buildString {
-            append("RTA through the phone microphone, ${seconds()} s averaged, room level ${meanLevel().toInt()} dBFS. ")
+            append("RTA of the mixer's Main LR (the desk's own analyser, 31 bands summed to octaves), ${seconds()} s averaged, level ${meanLevel().toInt()} dB. ")
             append("Band share of the whole (dB) 31..16k: ").append(a.joinToString(", ") { String.format(java.util.Locale.US, "%.1f", it) })
             append(". Krishna Das reference: ").append(KD.joinToString(", ") { String.format(java.util.Locale.US, "%.1f", it) })
             append(". Mix minus reference: ").append(a.indices.joinToString(", ") { NAMES[it] + " " + String.format(java.util.Locale.US, "%+.1f", a[it] - KD[it]) })
-            append(". (Phone mic: below 63 Hz it reads low; trust trends from 63 Hz up.)")
+            append(".")
         }
     }
 
@@ -144,6 +144,21 @@ class Rta {
     }
 
     fun stop() { running = false }
+
+    /** The desk's own RTA (31 one-third-octave bands, dB) in place of the phone microphone: summed into the ten
+     *  octave bands (31.5 Hz = bands 1..3, 63 = 4..6, ... 16 kHz = 28..30) as band share of the whole. */
+    fun feedDesk(b: FloatArray) {
+        val p = DoubleArray(10)
+        for (o in 0 until 10) for (k in (3 * o + 1)..minOf(3 * o + 3, 30)) { val db = b[k].toDouble(); if (db > -105) p[o] += Math.pow(10.0, db / 10) }
+        val tot = p.sum()
+        level.value = if (tot > 0) 10 * log10(tot) else -110.0
+        if (tot <= 0) return
+        for (i in 0 until 10) { smoothDesk[i] = 0.7 * smoothDesk[i] + 0.3 * p[i]; sum[i] += p[i] }
+        levelSum += tot
+        frames++
+        live.value = share(smoothDesk)
+    }
+    private val smoothDesk = DoubleArray(10)
 
     /** In-place radix-2 FFT. */
     private fun fft(re: DoubleArray, im: DoubleArray) {

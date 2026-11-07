@@ -83,3 +83,11 @@
 > First of all this mixer doesn't have Wi-Fi built in. What I did I went to network settings I switched IP mode to manual and then back to automatic and I press apply and then in that point it was scanning the new network and it's working.
 
 **Status:** the mixer on his network by cable to the router (192.168.1.62, then .102 after Apply); v25: the link notices a vanished desk (15 s), keeps asking every 5 s, searches again; the recorder no longer blames MixPad for an unreachable address.
+
+> Man in the middle needs to be there. Go ahead. I'm telling you explicitly. Please, this sniffing is very important to get RTS on this application. Please build it. Or find the sniffer on the GitHub. I mean ARTA. ARTA we need to decode, dead or alive.
+
+> And build Swift application which can do that for the future use. So we don't need to build and invent the wheel every time.
+
+> Please con I am going to disconnect the mixer and phone in 15 minutes. You need to continue working. First sniff the the protocol, then uh log everything, and then create model of this mixer app inside my macOS as an application emulating the mixer itself and then you're going to continue to work in emulator only and now continue testing and sniffing for the next 15 minutes. Please work fast. Go through every uh function of the mixer and log it.
+
+**Status:** RTA DECODED (type 23 words 312..342, 31 bands); v27 uses the desk's own RTA; PROTOCOL.md. Not done yet: the Swift sniffer app, the mixer emulator, the full tour of every function.
