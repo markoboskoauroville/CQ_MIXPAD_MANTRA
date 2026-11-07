@@ -30,6 +30,30 @@ class Proxy(private val desk: () -> String, private val dir: File, private val s
         active = true
         job = scope.launch(Dispatchers.IO) {
             val until = System.currentTimeMillis() + seconds * 1000L
+            // MixPad's first contact is UDP 51320 "CQ Find": pass it to the desk and the desk's answer back
+            val finder = scope.launch(Dispatchers.IO) {
+                try {
+                    java.net.DatagramSocket(null).use { s ->
+                        s.reuseAddress = true; s.bind(InetSocketAddress(51320)); s.soTimeout = 2000
+                        val up = java.net.DatagramSocket(); up.soTimeout = 1500
+                        val buf = ByteArray(2048)
+                        while (isActive && System.currentTimeMillis() < until) {
+                            val p = java.net.DatagramPacket(buf, buf.size)
+                            try { s.receive(p) } catch (_: java.net.SocketTimeoutException) { continue }
+                            val q = p.data.copyOf(p.length)
+                            File(dir, "mp_find.bin").appendBytes(q)
+                            up.send(java.net.DatagramPacket(q, q.size, InetSocketAddress(desk(), 51320)))
+                            val r = java.net.DatagramPacket(ByteArray(2048), 2048)
+                            try { up.receive(r) } catch (_: java.net.SocketTimeoutException) { log("  proxy: the desk did not answer CQ Find"); continue }
+                            val ans = r.data.copyOf(r.length)
+                            File(dir, "mp_found.bin").appendBytes(ans)
+                            s.send(java.net.DatagramPacket(ans, ans.size, p.socketAddress))
+                            log("  proxy: CQ Find answered (${ans.size} bytes)")
+                        }
+                        up.close()
+                    }
+                } catch (e: Exception) { log("  proxy finder: ${e.message}") }
+            }
             try {
                 ServerSocket().use { server ->
                     server.reuseAddress = true
@@ -47,6 +71,7 @@ class Proxy(private val desk: () -> String, private val dir: File, private val s
                     }
                 }
             } catch (e: Exception) { log("  proxy: ${e.message}") }
+            finder.cancel()
             active = false
             log("  proxy: stopped")
         }
