@@ -35,6 +35,34 @@ class Meters(private val host: () -> String, private val scope: CoroutineScope, 
     /** Output meters: 0..5 Out1..6, 6 Main L, 7 Main R. */
     val outputs = MutableStateFlow(FloatArray(16) { -90f })
     val alive = MutableStateFlow(false)
+
+    // ---- SD multitrack transport (forum thread 32441, JB_J's ESP32 code, 2026): REC = F7 11 11 11 03 FF 00 00 00,
+    // STOP = F7 11 11 10 01 FF 00 00 00 + F7 11 11 11 01 FF 00 00 00; the desk reports F7 12 12 0D <state> 25 0C 00,
+    // state 0x55 recording, 0x50 stopped. Needs the IP registered by CQ MixPad once since the desk's power-on.
+    enum class Rec { UNKNOWN, RECORDING, STOPPED }
+    val rec = MutableStateFlow(Rec.UNKNOWN)
+    /** When the desk was first seen recording (for the elapsed time). */
+    val recSince = MutableStateFlow(0L)
+    @Volatile private var tcpOut: java.io.OutputStream? = null
+
+    fun startRecording(): Boolean = sendTcp(byteArrayOf(0xF7.toByte(), 0x11, 0x11, 0x11, 0x03, 0xFF.toByte(), 0, 0, 0))
+    fun stopRecording(): Boolean = sendTcp(byteArrayOf(0xF7.toByte(), 0x11, 0x11, 0x10, 0x01, 0xFF.toByte(), 0, 0, 0,
+        0xF7.toByte(), 0x11, 0x11, 0x11, 0x01, 0xFF.toByte(), 0, 0, 0))
+    private fun sendTcp(b: ByteArray): Boolean {
+        val o = tcpOut ?: return false
+        return try { synchronized(this) { o.write(b); o.flush() }; log("  rec: sent ${b.size} bytes"); true } catch (_: Exception) { false }
+    }
+    private val win = IntArray(5); private var wn = 0
+    private fun tcpByte(v: Int) {
+        // a sliding window: F7 12 12 0D <state>
+        for (k in 0 until 4) win[k] = win[k + 1]; win[4] = v; wn++
+        if (wn >= 5 && win[0] == 0xF7 && win[1] == 0x12 && win[2] == 0x12 && win[3] == 0x0D) {
+            val s = when (win[4]) { 0x55 -> Rec.RECORDING; 0x50 -> Rec.STOPPED; else -> null } ?: return
+            if (s == Rec.RECORDING && rec.value != Rec.RECORDING) recSince.value = System.currentTimeMillis()
+            if (s != rec.value) log("  rec: the desk says ${s.name.lowercase()}")
+            rec.value = s
+        }
+    }
     /** The raw RTA-candidate frame (type 23), kept for decoding. */
     @Volatile var raw23: ByteArray? = null
     /** The last raw input-meter frame (type 8), for decoding the CQ-12T's layout. */
@@ -83,11 +111,15 @@ class Meters(private val host: () -> String, private val scope: CoroutineScope, 
         val keep = scope.launch(Dispatchers.IO) {
             val ka = frame(5, ByteArray(0))
             while (isActive) {
-                try { udp.send(DatagramPacket(ka, ka.size, desk)); out.write(handshake); out.flush() } catch (_: Exception) { break }
+                try { udp.send(DatagramPacket(ka, ka.size, desk)); synchronized(this@Meters) { out.write(handshake); out.flush() } } catch (_: Exception) { break }
                 delay(2500)
             }
         }
-        val drain = scope.launch(Dispatchers.IO) { val b = ByteArray(8192); try { while (isActive && inp.read(b) >= 0) {} } catch (_: Exception) {} }
+        tcpOut = out
+        val drain = scope.launch(Dispatchers.IO) {
+            val b = ByteArray(8192)
+            try { while (isActive) { val n = inp.read(b); if (n < 0) break; for (i in 0 until n) tcpByte(b[i].toInt() and 0xFF) } } catch (_: Exception) {}
+        }
         try {
             val buf = ByteArray(4096); var quiet = 0
             while (true) {
@@ -98,7 +130,7 @@ class Meters(private val host: () -> String, private val scope: CoroutineScope, 
                 parse(buf, p.length)
                 alive.value = true
             }
-        } finally { keep.cancel(); drain.cancel(); tcp.close(); udp.close(); alive.value = false }
+        } finally { keep.cancel(); drain.cancel(); tcpOut = null; tcp.close(); udp.close(); alive.value = false; rec.value = Rec.UNKNOWN }
     }
 
     private fun capture(b: ByteArray, n: Int) {

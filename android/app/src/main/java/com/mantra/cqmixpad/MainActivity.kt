@@ -141,6 +141,7 @@ class MainActivity : ComponentActivity() {
                 while (meterHistory.size > 8) meterHistory.removeFirst()
             }
         }
+        lifecycleScope.launch { recordingWatch() }
         rta.onSpectrum = { spec -> if (fbGuard) feedback.onSpectrum(spec)?.let { e -> runOnUiThread { onFeedback(e) } } }
         // the RTA candidate (type 23) saved every 2 s for decoding: files/rta23.bin, 760-byte records
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -345,6 +346,68 @@ class MainActivity : ComponentActivity() {
         store.remember(String.format(Locale.US, "feedback at %.0f Hz on %s (%s) in %s", e.hz, who, src.id, mix))
     }
 
+    // ---------- the concert recording (Marko, 7.11.2026: "it is very important to not miss recording of concert") ----------
+
+    private val said = HashSet<String>()
+    private var lastRecTry = 0L
+    private var lastRecAlert = 0L
+    private var confirmStop by mutableStateOf(false)
+
+    /** Every 15 s: reminders before the concert, REC by itself 10 min before it, and loud alerts until the desk says recording. */
+    private suspend fun recordingWatch() {
+        while (true) {
+            kotlinx.coroutines.delay(15000)
+            val start = concertStart() ?: continue
+            val now = System.currentTimeMillis()
+            val min = 60_000L
+            val auto = start - 10 * min
+            val recording = meters.rec.value == Meters.Rec.RECORDING
+            fun once(key: String, text: String) { if (said.add(key)) say(text) }
+            val hhmm = java.text.SimpleDateFormat("HH:mm", Locale.US)
+            if (now in (start - 30 * min) until (start - 15 * min)) once("r30", "The concert starts at ${hhmm.format(start)}. I start the multitrack recording by myself at ${hhmm.format(auto)}.")
+            if (now in (start - 15 * min) until auto) once("r15", "Fifteen minutes to the concert. Recording starts at ${hhmm.format(auto)}.")
+            if (now in auto until (start + 60 * min) && !recording) {
+                if (now - lastRecTry > 60_000) {
+                    lastRecTry = now
+                    val sent = meters.startRecording()
+                    log.add(0, if (sent) "  ● REC sent to the desk" else "  ! REC could not be sent (no desk connection)")
+                    if (!sent || meters.rec.value != Meters.Rec.RECORDING) once("auto" + (now / 600_000), "Starting the concert recording on the SD card.")
+                } else if (now - lastRecTry > 10_000 && now - lastRecAlert > 120_000) {
+                    lastRecAlert = now
+                    say("Attention. The concert is NOT recording. Press record in MixPad, multitrack, or on the desk.")
+                }
+            }
+            if (recording && now in (start + 30 * min) until (start + 40 * min)) once("end", "The Santoshi set should be over. Stop the recording when you are done.")
+        }
+    }
+
+    /** The current concert's start, today only. */
+    private fun concertStart(): Long? {
+        val d = store.dateIso() ?: return null; val s = store.startTime() ?: return null
+        return try { java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).parse("$d $s")!!.time } catch (_: Exception) { null }
+    }
+
+    @Composable
+    private fun RecChip() {
+        val st by meters.rec.collectAsState()
+        val since by meters.recSince.collectAsState()
+        var now by remember { mutableStateOf(System.currentTimeMillis()) }
+        LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(1000) } }
+        when (st) {
+            Meters.Rec.RECORDING -> {
+                val s = ((now - since) / 1000).coerceAtLeast(0)
+                Chip(String.format(Locale.US, "● REC %d:%02d:%02d", s / 3600, s / 60 % 60, s % 60), RecRed, filled = true) { confirmStop = true }
+            }
+            Meters.Rec.STOPPED -> Chip("● START REC", Grey) { if (meters.startRecording()) log.add(0, "  ● REC sent to the desk") else say("No connection to the desk for recording.") }
+            Meters.Rec.UNKNOWN -> Chip("REC ?", Amber) { if (meters.startRecording()) log.add(0, "  ● REC sent to the desk") else say("No connection to the desk for recording. Open CQ MixPad once, then come back.") }
+        }
+        val start = concertStart()
+        if (start != null && st != Meters.Rec.RECORDING) {
+            val auto = start - 600_000
+            if (now < auto) Text("  auto REC " + java.text.SimpleDateFormat("HH:mm", Locale.US).format(auto), color = Grey, fontSize = 11.sp)
+        }
+    }
+
     private fun resumeRta() { if (rtaWasOn) { rtaWasOn = false; toggleRta() } }
 
     private fun toggleRta() {
@@ -410,6 +473,7 @@ class MainActivity : ComponentActivity() {
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Chip(concert?.let { "${it.venue} · ${it.date}" } ?: "CONCERT", Amber, filled = true) { concertDialog = true }
+                RecChip()
             }
             // mixes
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
@@ -463,6 +527,16 @@ class MainActivity : ComponentActivity() {
         }
         if (keyDialog) KeyDialog { keyDialog = false }
         if (concertDialog) ConcertDialog { concertDialog = false }
+        if (confirmStop) Box(Modifier.fillMaxSize().background(Color(0xCC000000)), contentAlignment = Alignment.Center) {
+            Column(Modifier.fillMaxWidth(0.85f).clip(RoundedCornerShape(10.dp)).background(Panel).padding(16.dp)) {
+                Text("Stop the concert recording?", color = Text1, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("The SD card keeps everything recorded so far.", color = Grey, fontSize = 13.sp)
+                Row {
+                    Chip("KEEP RECORDING", Green, filled = true) { confirmStop = false }
+                    Chip("STOP", RecRed) { confirmStop = false; meters.stopRecording(); log.add(0, "  ■ STOP sent to the desk") }
+                }
+            }
+        }
     }
 
     @Composable

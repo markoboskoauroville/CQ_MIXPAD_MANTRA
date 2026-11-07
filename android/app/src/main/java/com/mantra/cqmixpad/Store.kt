@@ -87,7 +87,11 @@ class Store(ctx: Context) {
         update { it.put("mix", m).put("desk", desk).put("saved", SimpleDateFormat("d.M.yyyy HH:mm", Locale.US).format(Date())) }
     }
 
-    /** The CQ scene this concert starts from (Scene 1 "Santoshi Mix" unless the concert says otherwise). */
+    /** When the concert starts, "HH:mm" on its date (Indian Embassy 7.11.2026: 17:30, Marko). */
+    fun startTime(): String? = current.value?.let { read(it.id).optString("start", "").ifBlank { null } }
+    fun dateIso(): String? = current.value?.id?.substringBefore(" ")
+
+        /** The CQ scene this concert starts from (Scene 1 "Santoshi Mix" unless the concert says otherwise). */
     fun baseScene(): Int = current.value?.let { read(it.id).optInt("scene", 1) } ?: 1
 
     /** This concert's stored mix: parameter → value. */
@@ -122,7 +126,12 @@ class Store(ctx: Context) {
     // ---------- the first two concerts ----------
 
     private fun seed() {
-        if (prefs.getBoolean("seeded", false)) return
+        if (prefs.getBoolean("seeded", false)) {
+            // v15: the Embassy's start time, for phones seeded before it existed
+            val e = file("2026-11-07 Indian Embassy")
+            if (e.exists()) { val j = JSONObject(e.readText()); if (!j.has("start")) { j.put("start", "17:35").put("programme", "16:30 guests arrive; 17:00 welcome; 17:05 dance (Indian diaspora); 17:10 song by Ms Avneet Kaur Royar; 17:15 dance (Ana Jug troupe); 17:35-18:00 Santoshi Kirtan band; 18:00 refreshments; 19:00 close"); e.writeText(j.toString(2)) } }
+            return
+        }
         val labels = JSONObject()
         fun lab(ch: String, name: String, role: String) { labels.put(ch, JSONObject().put("name", name).put("role", role)) }
         lab("Ip1", "Svemir", "lead vocal, low male"); lab("Ip2", "", "bass DI"); lab("Ip3", "", "mridangam high head")
@@ -150,7 +159,7 @@ class Store(ctx: Context) {
         file(subic).writeText(JSONObject().put("venue", "Šubić").put("date", "17.10.2026").put("labels", labels).put("mix", mix)
             .put("desk", desk.toString()).put("template", "").toString(2))
         val embassy = "2026-11-07 Indian Embassy"
-        file(embassy).writeText(JSONObject().put("venue", "Indian Embassy").put("date", "7.11.2026").put("labels", labels).put("mix", mix)
+        file(embassy).writeText(JSONObject().put("venue", "Indian Embassy").put("date", "7.11.2026").put("start", "17:35").put("programme", "16:30 guests arrive; 17:00 welcome; 17:05 dance (Indian diaspora); 17:10 song by Ms Avneet Kaur Royar; 17:15 dance (Ana Jug troupe); 17:35-18:00 Santoshi Kirtan band; 18:00 refreshments; 19:00 close").put("labels", labels).put("mix", mix)
             .put("desk", desk.toString()).put("template", subic).toString(2))
         prefs.edit().putBoolean("seeded", true).putString("current", embassy).apply()
     }

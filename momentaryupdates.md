@@ -49,3 +49,15 @@
 > build feedback detection in app to detect wich mic is causing it and use build in feedback suppressor on that individual channel
 
 **Status:** v10 the desk's live meters over its private protocol (DigiMixer's handshake), working; v11 feedback guard: phone FFT finds a ringing tone, the desk meters name the mic, -3 dB in the ringing mix (max -9), spoken, orange step for the CQ's Feedback Assistant (it is per output, not per channel, and only MixPad reaches it).
+
+> work harder on decoding cq rta
+
+> add recoding display and trigger to start multichannel recording but only of cannel in use fir concert it ia verty important to not miss recoding of concert this concert today start around 17.30
+
+> also information about upcoming concert are on our web page Santosh band as well as in repository wich creates pages
+
+> to plan and give reminders of record if it is not recording app should trigger it automatically
+
+> (the Embassy's programme: 16:30 arrival … 17:35–18:00 Performance by the Santoshi Kirtan band … 19:00 close)
+
+**Status:** v15 REC panel (the desk's own state, F7 12 12 0D), START / STOP-with-confirm, auto REC 10 min before the concert (17:25 tonight), reminders, alerts every 2 min while not recording. Arming per track: in MixPad (not in any known protocol).
