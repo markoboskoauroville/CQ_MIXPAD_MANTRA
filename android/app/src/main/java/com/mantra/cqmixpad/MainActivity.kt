@@ -132,7 +132,7 @@ class MainActivity : ComponentActivity() {
         })
         hear = Hear(this)
         link.start()
-        meters = Meters({ link.host.value }, lifecycleScope) { log.add(0, it) }
+        meters = Meters({ link.host.value }, lifecycleScope, { log.add(0, it) }, filesDir)
         meters.start()
         lifecycleScope.launch {          // meter history, 4 per second, 2 s long
             while (true) {

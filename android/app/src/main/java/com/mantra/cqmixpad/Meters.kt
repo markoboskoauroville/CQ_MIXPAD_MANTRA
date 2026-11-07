@@ -24,7 +24,12 @@ import java.net.Socket
  * 0..5 = Out1..6, 6/7 = Main L/R), types 10, 23, 24 not decoded yet (23 is the RTA candidate, 760 bytes).
  * Level: dB = (raw - 0x8000) / 256 - 18 (DigiMixer's offset, unverified on a CQ).
  */
-class Meters(private val host: () -> String, private val scope: CoroutineScope, private val log: (String) -> Unit) {
+class Meters(private val host: () -> String, private val scope: CoroutineScope, private val log: (String) -> Unit,
+             private val dir: java.io.File? = null) {
+    /** Capture mode for decoding: while [capUntil] is in the future every datagram goes to files/cap.bin as
+     *  [8-byte ms timestamp][2-byte length][bytes]. Started by the file files/capture.flag (adb run-as touch). */
+    @Volatile private var capUntil = 0L
+    private var cap: java.io.OutputStream? = null
     /** Input meters by input index (0 = Ip1), dBFS. */
     val inputs = MutableStateFlow(FloatArray(32) { -90f })
     /** Output meters: 0..5 Out1..6, 6 Main L, 7 Main R. */
@@ -89,10 +94,28 @@ class Meters(private val host: () -> String, private val scope: CoroutineScope, 
                 val p = DatagramPacket(buf, buf.size)
                 try { udp.receive(p) } catch (_: java.net.SocketTimeoutException) { if (++quiet > 5) throw java.io.IOException("meter stream stopped"); continue }
                 quiet = 0
+                capture(buf, p.length)
                 parse(buf, p.length)
                 alive.value = true
             }
         } finally { keep.cancel(); drain.cancel(); tcp.close(); udp.close(); alive.value = false }
+    }
+
+    private fun capture(b: ByteArray, n: Int) {
+        val d = dir ?: return
+        val now = System.currentTimeMillis()
+        val flag = java.io.File(d, "capture.flag")
+        if (flag.exists()) {
+            val secs = flag.readText().trim().toIntOrNull() ?: 20
+            flag.delete(); cap?.close()
+            cap = java.io.BufferedOutputStream(java.io.FileOutputStream(java.io.File(d, "cap.bin")))
+            capUntil = now + secs * 1000L
+            log("  capture: $secs s of the meter stream to cap.bin")
+        }
+        val o = cap ?: return
+        if (now > capUntil) { o.close(); cap = null; java.io.File(d, "cap.done").writeText("ok"); log("  capture done"); return }
+        val h = java.nio.ByteBuffer.allocate(10).putLong(now).putShort(n.toShort()).array()
+        o.write(h); o.write(b, 0, n)
     }
 
     private fun readFrame(inp: InputStream): Pair<Int, ByteArray>? {
