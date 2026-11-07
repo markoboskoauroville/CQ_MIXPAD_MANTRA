@@ -80,6 +80,9 @@ private val Amber = Color(0xFFFF9F0A)
 private val Blue = Color(0xFF0A84FF)
 private val Cyan = Color(0xFF64D2FF)
 private val Sand = Color(0xFFF2DDB4)      // TTT's ink
+
+/** The CQ-12T's meter frames arrive but their layout is not decoded (7.11.2026): hidden until it is. */
+private const val METERS_DECODED = false
 private val RecRed = Color(0xFFEF4444)    // TTT's recording red
 
 class MainActivity : ComponentActivity() {
@@ -189,7 +192,7 @@ class MainActivity : ComponentActivity() {
         append("MASTERS: ").append(Cq.MIXES.take(9).mapNotNull { m -> Cq.masterParam(m)?.let { p -> link.values[p]?.let { "$m ${Cq.dbText(Cq.valueToDb(it))}" } } }.joinToString(", ")).append('\n')
         Cq.masterMuteParam("MAIN")?.let { append("MAIN master ").append(if (link.muted(it)) "MUTED" else "on").append('\n') }
         for (d in 1..4) link.values[Cq.dcaLevelParam(d)]?.let { append("DCA$d ${Cq.dbText(Cq.valueToDb(it))}${if (link.muted(Cq.dcaMuteParam(d))) " MUTED" else ""}\n") }
-        if (meters.alive.value) {
+        if (METERS_DECODED && meters.alive.value) {
             val inp = meters.inputs.value; val o = meters.outputs.value
             append("LIVE METERS (dBFS, the desk's own): ")
             append(link.present.value.filter { it.code < 16 && it.code < inp.size }.joinToString(", ") { "${it.id} ${inp[it.code].toInt()}" })
@@ -321,10 +324,13 @@ class MainActivity : ComponentActivity() {
         val mix = if (before != null) Feedback.ringingMix(before.second, meters.outputs.value) else "MAIN"
         val mixWord = if (mix == "MAIN") "the main" else "monitor ${mix.removePrefix("OUT")}"
         val cands = link.present.value.filter { it.code < 16 }.map { it.code }
-        val ch = if (before != null && meters.alive.value) Feedback.culprit(before.first, meters.inputs.value, cands) else null
+        // the desk's meter layout on the CQ-12T is not decoded yet (7.11.2026): until it is, no channel is blamed or cut
+        val ch = if (METERS_DECODED && before != null && meters.alive.value) Feedback.culprit(before.first, meters.inputs.value, cands) else null
         if (ch == null) {
-            log.add(0, String.format(Locale.US, "  ⚠ feedback %.0f Hz (+%.0f dB): no single mic rose on the meters", e.hz, e.prominenceDb))
-            say("Feedback at $hz in $mixWord. I cannot tell which microphone. In MixPad, turn on the Feedback Assistant on $mixWord.")
+            log.add(0, String.format(Locale.US, "  ⚠ FEEDBACK %.0f Hz", e.hz))
+            log.add(0, String.format(Locale.US, "🟠 MixPad: Feedback Assistant on Main LR (or the monitor that rings); or a PEQ notch at %.0f Hz on the open vocal mics", e.hz))
+            say("Feedback at $hz. Pull down the microphone that rings, or turn on the Feedback Assistant in MixPad.")
+            store.remember(String.format(Locale.US, "feedback at %.0f Hz", e.hz))
             return
         }
         val src = Cq.SOURCES.first { it.code == ch }
@@ -392,7 +398,7 @@ class MainActivity : ComponentActivity() {
                     Text("CQ MixPad (Mantra)", color = Text1, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(status, color = Grey, fontSize = 11.sp, maxLines = 2)
                     val alive by meters.alive.collectAsState()
-                    if (alive) { val o by meters.outputs.collectAsState(); if (o.size > 7) Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (alive && METERS_DECODED) { val o by meters.outputs.collectAsState(); if (o.size > 7) Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("MAIN ", color = Grey, fontSize = 10.sp)
                         LevelBar(o[6], Modifier.width(90.dp).height(5.dp)); Spacer(Modifier.width(3.dp)); LevelBar(o[7], Modifier.width(90.dp).height(5.dp))
                     } }
@@ -418,7 +424,7 @@ class MainActivity : ComponentActivity() {
                     val inMeters by meters.inputs.collectAsState()
                     Strip(top = l?.name?.ifBlank { null } ?: s.id, sub = if (l != null) s.id + " · " + l.instrument else "",
                         db = link.db(p), muted = link.muted(Cq.muteParam(s)),
-                        meter = if (meters.alive.value && s.code < 16 && s.code < inMeters.size) inMeters[s.code] else null,
+                        meter = if (METERS_DECODED && meters.alive.value && s.code < 16 && s.code < inMeters.size) inMeters[s.code] else null,
                         pan = if (mix == "MAIN") link.values[Cq.panMainParam(s)]?.let { Cq.valueToPan(it) } else null,
                         onDb = { link.setDb(p, it) }, onMute = { link.setMute(Cq.muteParam(s), !link.muted(Cq.muteParam(s))) },
                         onPan = { link.setPan(Cq.panMainParam(s), it) })
