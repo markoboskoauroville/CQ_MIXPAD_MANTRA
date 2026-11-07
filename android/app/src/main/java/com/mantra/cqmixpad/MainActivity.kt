@@ -178,7 +178,8 @@ class MainActivity : ComponentActivity() {
                 when {
                     a.say.isNotBlank() -> say(a.say)
                     withRta && pending.isNotEmpty() -> say("I suggest ${pending.size} moves. Tap apply to make them.")
-                    done.isNotEmpty() -> say("Done: " + done.joinToString(", ").replace("→", "to") + if (notes > 0) ". And $notes step${if (notes > 1) "s" else ""} for you in MixPad." else ".")
+                    done.isNotEmpty() -> say(a.actions.filter { it.name != "note_for_marko" && it.name != "remember" }.map { it.spoken(store.labels.value) }.filter { it.isNotBlank() }
+                        .joinToString(", ").replaceFirstChar { it.uppercase() } + if (notes > 0) ". And $notes step${if (notes > 1) "s" else ""} for you in MixPad." else ".")
                     notes > 0 -> say("$notes step${if (notes > 1) "s" else ""} for you in MixPad, in orange.")
                     else -> say("Nothing to change.")
                 }
@@ -225,6 +226,11 @@ class MainActivity : ComponentActivity() {
             "note_for_marko" -> log.add(0, "🟠 ${i.optString("text")}")
         }
     }
+
+    /** Words the recogniser should expect: tonight's names and roles and the mixing words. */
+    private fun vocabulary(): List<String> = (store.labels.value.values.flatMap { listOf(it.name, it.instrument.substringBefore(",")) } +
+        listOf("djembe", "mridangam", "Svemir", "Tajana", "Igor", "Snoopy", "Diana", "Santoshi", "Krishna Das", "monitor", "reverb",
+            "decibels", "mute", "unmute", "pan", "backing vocal", "lead vocal", "bass", "guitar", "channel", "scene")).filter { it.isNotBlank() }.distinct()
 
     private fun toggleRta() {
         if (rtaJob?.isActive == true) { rta.stop(); rtaJob = null; rtaOn = false }
@@ -357,11 +363,14 @@ class MainActivity : ComponentActivity() {
             Column(Modifier.padding(start = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Chip(if (on) "RTA ON" else "RTA", if (on) Cyan else Grey, filled = on) { toggleRta() }
                 Chip("MATCH KD", Amber) {
-                    if (rtaJob?.isActive != true) toggleRta()
+                    if (rtaJob?.isActive != true) { toggleRta(); say("Listening to the room. Tap match again in ten seconds."); return@Chip }
+                    if (rta.seconds() < 6) { say("Still listening, ${6 - rta.seconds()} more seconds."); return@Chip }
+                    if (rta.level.value < -55) { say("I hear no music in the room, nothing to match."); return@Chip }
                     command("Compare the RTA with the Krishna Das profile and suggest how to fit the mix, vocals in the first plan.", fromVoice = false, withRta = true)
                 }
             }
         }
+        if (on) { val lv by rta.level.collectAsState(); Text(String.format(Locale.US, "room %.0f dBFS%s", lv, if (lv < -55) ": no music" else ""), color = if (lv < -55) Amber else Grey, fontSize = 10.sp) }
         Row(Modifier.fillMaxWidth()) {
             Rta.NAMES.forEachIndexed { i, n ->
                 Text(if (on) String.format(Locale.US, "%s %+.0f", n, live[i] - Rta.KD[i]) else n, color = Grey, fontSize = 9.sp,
@@ -385,7 +394,7 @@ class MainActivity : ComponentActivity() {
             Chip("SEND", if (busy) Grey else Cyan, filled = !busy) { if (text.isNotBlank()) { command(text.trim(), false); text = "" } }
             Chip(if (listening) "LISTENING" else "SPEAK", if (micOk) Green else Amber, filled = micOk || listening) {
                 if (!micOk) openAppSettings()
-                else if (!busy) { speech.stop(); if (rtaOn) { rta.stop(); rtaJob = null; rtaOn = false; rtaWasOn = true }; listening = true; voice.listen() }
+                else if (!busy) { voice.hints = vocabulary(); speech.stop(); if (rtaOn) { rta.stop(); rtaJob = null; rtaOn = false; rtaWasOn = true }; listening = true; voice.listen() }
             }
         }
     }

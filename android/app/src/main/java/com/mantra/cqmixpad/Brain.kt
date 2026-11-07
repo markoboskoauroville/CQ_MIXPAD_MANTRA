@@ -31,6 +31,30 @@ class Brain(private val store: Store) {
             "note_for_marko" -> "YOU: ${input.optString("text")}"
             else -> "$name $input"
         }
+
+        /** For the ear: the person or role instead of the channel code, words instead of symbols. */
+        fun spoken(labels: Map<String, Store.Label>): String {
+            val ch = input.optString("channel")
+            val l = labels[ch]
+            val who = when {
+                ch == "MASTER" -> "the ${input.optString("mix", "main").lowercase()} master"
+                l != null && l.name.isNotBlank() -> l.name
+                l != null && l.instrument.isNotBlank() -> "the " + l.instrument.substringBefore(",")
+                else -> "channel " + ch.removePrefix("Ip")
+            }
+            val mix = input.optString("mix", "MAIN").let { if (it == "MAIN" || it.isBlank()) "" else " in " + it.lowercase().replace("out", "monitor ").replace("fx", "effect ") }
+            fun db(d: Double) = (if (d < 0) "minus " else "") + String.format(java.util.Locale.US, "%.1f", kotlin.math.abs(d)).removeSuffix(".0") + " dB"
+            return when (name) {
+                "set_level" -> "$who$mix at ${db(input.optDouble("db"))}"
+                "change_level" -> input.optDouble("delta_db").let { "$who$mix ${if (it < 0) "down" else "up"} ${db(kotlin.math.abs(it))}" }
+                "set_mute" -> "$who ${if (input.optBoolean("muted")) "muted" else "unmuted"}"
+                "set_pan" -> input.optDouble("percent").toInt().let { "$who panned " + if (it == 0) "to the centre" else "${kotlin.math.abs(it)} percent ${if (it < 0) "left" else "right"}" }
+                "set_label" -> "channel ${ch.removePrefix("Ip")} is ${input.optString("name").ifBlank { input.optString("role") }}"
+                "recall_scene" -> "scene ${input.optInt("number")} recalled"
+                "soft_key" -> "soft key ${input.optInt("number")} pressed"
+                else -> ""
+            }
+        }
     }
     data class Answer(val say: String, val actions: List<Action>)
 
@@ -89,6 +113,7 @@ What you know about Santoshi (from his tutorial, 2026):
 How you act:
 - You control the desk only through the tools. Channels are the CQ's names (Ip1..Ip10, ST1, USB, BT, FX1, FX2 returns). "channel one" means Ip1.
 - When Marko says who is on a channel ("backing vocal Diana on channel 4"), call set_label with name "Diana" (only the person goes on the channel) and role "backing vocal" (the function, which decides how you mix it: lead vocals in the first plan, backing vocals under them, instruments behind the voices). Give it a sensible starting level and pan if Marko is setting up, and use note_for_marko for the Library preset to load in MixPad.
+- The RTA is the phone's microphone: judge only 63 Hz to 8 kHz from it (below and above it reads its own noise). If the room level is below -55 dBFS there is no music to judge: say so and change nothing.
 - The tonal target is the Krishna Das references (the profile in the RTA lines). Compare the RTA with it and fit the mix to it, keeping the vocals in the first plan. The MIDI link moves only faders, sends, mutes and pans: it cannot reach EQ, gain or compressors. So you correct the balance yourself with faders, and for EQ you say exactly what to do in MixPad with note_for_marko (channel, PEQ band, frequency, dB), small moves of 1 to 3 dB.
 - Be careful: this is a live concert. Never change more than asked. Moves larger than +6 dB at once, unmuting, or touching the MAIN MASTER need Marko's clear words. Small steps (1-3 dB) when correcting.
 - When you are given a room analysis and asked for suggestions, propose concrete moves as tool calls (they wait for his APPLY) and explain the reason in the sentence.

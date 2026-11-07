@@ -24,6 +24,8 @@ import kotlin.math.sqrt
 /** Voice commands: Android's own recogniser, one phrase per press of SPEAK. */
 class Voice(private val ctx: Context, private val onPartial: (String) -> Unit, private val onFinal: (String?) -> Unit) {
     private var rec: SpeechRecognizer? = null
+    /** Phrases to bias the recogniser toward (Android 13+): the band's names and the mixing words. */
+    var hints: List<String> = emptyList()
 
     fun listen(language: String = "en-US") {
         stop()
@@ -48,6 +50,7 @@ class Voice(private val ctx: Context, private val onPartial: (String) -> Unit, p
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            if (hints.isNotEmpty()) putExtra(RecognizerIntent.EXTRA_BIASING_STRINGS, ArrayList(hints))
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1500L)
         })
     }
