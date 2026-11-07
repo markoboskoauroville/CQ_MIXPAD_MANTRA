@@ -15,6 +15,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -119,7 +120,7 @@ class MainActivity : ComponentActivity() {
         if (!micOk) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
     }
 
-    override fun onRequestPermissionsResult(rc: Int, p: Array<out String>, r: IntArray) {
+    override fun onRequestPermissionsResult(rc: Int, p: Array<String>, r: IntArray) {
         super.onRequestPermissionsResult(rc, p, r)
         micOk = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     }
@@ -397,7 +398,7 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
             Canvas(Modifier.fillMaxWidth().height(22.dp).pointerInput(Unit) {
                 detectTapGestures(onDoubleTap = { setPan(0.0) })
             }.pointerInput(Unit) {
-                androidx.compose.foundation.gestures.detectHorizontalDragGestures { ch, _ ->
+                detectHorizontalDragGestures { ch, _ ->
                     setPan(((ch.position.x / size.width) * 200 - 100).toDouble().coerceIn(-100.0, 100.0))
                 }
             }) {
