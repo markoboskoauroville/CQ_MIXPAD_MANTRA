@@ -34,3 +34,8 @@ CQ MixPad's private protocol reaches them. Sonnet says those steps as orange lin
 GitHub Actions only (`.github/workflows/android.yml`): unit tests (every example of the protocol PDF, `CqTest.kt`), then
 the APK, release v<N> Latest. Version in `android/gradle.properties`. The Anthropic key is put into the app's own files
 from the Mac (`adb shell run-as com.mantra.cqmixpad`), never in the repository.
+
+## The private protocol (TCP 51326 + UDP)
+Recorder (REC/STOP/state/armed tracks) and the mixer's own **RTA** (31 third-octave bands) are decoded: see
+PROTOCOL.md and `tools/cq_mitm.py` (the man-in-the-middle used to decode them). One client at a time: keep CQ MixPad
+closed while this app records or reads the RTA.

@@ -1,17 +1,28 @@
 # TAKEOVER: CQ MixPad (Mantra)
 
-**State 7.11.2026, 14:10:** v25. Recorder decoded on the desk (Recorder.kt): REC/STOP, state (55-byte status, byte 7 = 0x40), take names, card left (×1.98), armed mask (full dump, 100 bytes from its end); REC tab with time, badges, programme, auto REC 17:25 tonight. Proven over the cable AND over his network (mixer by cable to the router, 192.168.1.102). One private-protocol client at a time: CQ MixPad connected = our recorder refused. SD takes: MT001 Šubić soundcheck, MT002–005 REC tests. Meters/RTA (UDP) not decoded: hidden.
+**State 7.11.2026, 14:50 — v27, before the Indian Embassy concert.**
 
-**Earlier, 10:25:** v3 on the Pixel (concerts, Speechify). Sonnet answered for real (Ip9 label). The CQ in Multitrack, Ip1–10 on SD/USB, the SD card formatted once and recording 12 min of Šubić. Skill: ~/.claude/skills/concert-mix.
+## What works (tested on the real CQ-12T, over the cable and over Wi-Fi at 192.168.1.102)
+- **Desk** (TCP 51325, A&H MIDI): faders, sends OUT1–6/FX1–2, mutes, pans, masters, DCAs, scenes, soft keys; live sync.
+- **Recorder** (TCP 51326, private, `Recorder.kt`): REC, STOP (confirm), state, take timer, card left, armed-track badges,
+  auto-REC 10 min before the concert (17:25 for the Santoshi set at 17:35), reminders, alerts.
+- **RTA of the mixer itself** (v27): UDP type 23 words 312..342 = 31 third-octave bands, read in the recorder's single
+  session; feeds the RTA strip and MATCH KD (Krishna Das profile). Verified: 1 kHz tone → 1 kHz band.
+- **Sonnet 5.5** commands (typed / AssemblyAI voice), names + roles per concert, Speechify voice, VIEW tab, feedback guard
+  (announces only; the desk meters are not decoded, so it never cuts).
 
-**Earlier:** v1 written and pushed for the Santoshi concert at the Embassy tonight. Protocol proven on the real
-CQ-12T by hand first (gets from the Pixel: Ip1 muted, Ip1 fader ≈0 dB, Main ≈ −7 dB).
+## Rules learnt the hard way
+- The desk takes **one private-protocol client**: CQ MixPad open = our recorder and RTA refused. Keep MixPad closed.
+- Network writes never on Android's main thread. Recall of Scene 1 resets Ip sources; a muted Ip1 gives a silent Main.
+- Keys in the app's files over `adb shell run-as com.mantra.cqmixpad` (anthropic.key from "100dolara antropic.txt",
+  speechify.keys, assemblyai.keys); never printed.
 
-**Install:** `gh release download v<N> -R markoboskoauroville/CQ_MIXPAD_MANTRA -p '*.apk'`, `adb install -r`.
-**Keys** (never printed): `files/anthropic.key` from `~/Downloads/API/100dolara antropic.txt` (Claude.api.txt answers 401), `files/speechify.keys` = every `sk_` key of speechify_api.txt, one per line; both through `adb shell run-as com.mantra.cqmixpad sh -c 'cat > files/…'`.
+## Decoding more of the protocol
+`tools/cq_mitm.py 192.168.1.102 --local`, CQ MixPad for Mac → Other… → 127.0.0.1, drive it with `macro do`, log each
+action with its time in captures/<time>/actions.log, diff TCP c2d around it. Results go into PROTOCOL.md.
 
-**Files:** Cq.kt (protocol, pure Kotlin), Link.kt (TCP, discovery, state), Brain.kt (Sonnet tools + prompt with the
-Santoshi knowledge), Ears.kt (speech, RTA), Store.kt (labels, notes, concerts), MainActivity.kt (the desk).
-
-**Next ideas:** a USB hub (Ethernet + the CQ's USB audio) would give a true RTA of the Main and of each channel instead
-of the phone mic; MixPad's private protocol for EQ and names (needs a capture between MixPad and the CQ).
+## Open (asked by Marko 7.11.2026)
+1. A Swift app that does the sniffing (cq_mitm as a Mac app, with an action log and a diff view).
+2. A macOS emulator of the CQ-12T (answers MixPad and our app like the desk) to keep developing without the mixer.
+3. Go through every function of MixPad and log it (PEQ bands, gate, comp, FX, routing, names, scenes, meters 8/9/24).
+4. Desk meters (types 8/9) layout for the feedback guard's culprit and live meters.
