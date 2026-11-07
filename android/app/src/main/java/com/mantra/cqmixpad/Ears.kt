@@ -79,6 +79,8 @@ class Rta {
     private var levelSum = 0.0
     /** True while the app itself is speaking: those frames are not the room (the RTA must not hear its own voice). */
     @Volatile var deaf = false
+    /** Every FFT frame's power spectrum (bins 0..4095 at 48 kHz), for the feedback detector. */
+    @Volatile var onSpectrum: ((DoubleArray) -> Unit)? = null
     /** The room's mean level over the averaged window (dBFS), for the "is there music" check. */
     fun meanLevel(): Double = if (frames == 0) -90.0 else 10 * log10(levelSum / frames + 1e-12)
     @Volatile private var running = false
@@ -130,7 +132,9 @@ class Rta {
                 if (deaf) continue                                    // our own voice: not the room
                 fft(re, im)
                 val p = DoubleArray(10)
-                for (k in 1 until n / 2) { val b = bin[k]; if (b >= 0) p[b] += re[k] * re[k] + im[k] * im[k] }
+                val spec = DoubleArray(n / 2)
+                for (k in 1 until n / 2) { val pw = re[k] * re[k] + im[k] * im[k]; spec[k] = pw; val b = bin[k]; if (b >= 0) p[b] += pw }
+                onSpectrum?.invoke(spec)
                 for (i in 0 until 10) { smooth[i] = 0.8 * smooth[i] + 0.2 * p[i]; sum[i] += p[i] }
                 levelSum += ms / hop.size
                 frames++

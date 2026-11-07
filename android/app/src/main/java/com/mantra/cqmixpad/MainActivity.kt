@@ -92,6 +92,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var voice: Voice
     private lateinit var hear: Hear
     private lateinit var meters: Meters
+    private val feedback = Feedback()
+    private var fbGuard by mutableStateOf(true)
+    /** The desk's meters about 1.5 s ago, to see which microphone rose with a ringing tone. */
+    private val meterHistory = ArrayDeque<Pair<FloatArray, FloatArray>>()
+    private val fbCut = HashMap<Int, Double>()
+    private var fbLast = 0L
 
     private val log = mutableStateListOf<String>()
     private val pending = mutableStateListOf<Brain.Action>()
@@ -124,6 +130,14 @@ class MainActivity : ComponentActivity() {
         link.start()
         meters = Meters({ link.host.value }, lifecycleScope) { log.add(0, it) }
         meters.start()
+        lifecycleScope.launch {          // meter history, 4 per second, 2 s long
+            while (true) {
+                kotlinx.coroutines.delay(250)
+                meterHistory.addLast(meters.inputs.value.copyOf() to meters.outputs.value.copyOf())
+                while (meterHistory.size > 8) meterHistory.removeFirst()
+            }
+        }
+        rta.onSpectrum = { spec -> if (fbGuard) feedback.onSpectrum(spec)?.let { e -> runOnUiThread { onFeedback(e) } } }
         // the RTA candidate (type 23) saved every 2 s for decoding: files/rta23.bin, 760-byte records
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val f = java.io.File(filesDir, "rta23.bin")
@@ -136,11 +150,13 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         micOk = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         if (!micOk) requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 1)
+        else if (fbGuard && !rtaOn && !listening) toggleRta()      // the feedback guard listens from the start
     }
 
     override fun onRequestPermissionsResult(rc: Int, p: Array<String>, r: IntArray) {
         super.onRequestPermissionsResult(rc, p, r)
         micOk = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        if (micOk && fbGuard && !rtaOn) toggleRta()
     }
 
     override fun onDestroy() { speech.shutdown(); voice.stop(); rta.stop(); super.onDestroy() }
@@ -286,6 +302,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** A ringing tone: find the microphone on the desk's meters, pull it down 3 dB in the mix that rings, tell Marko. */
+    private fun onFeedback(e: Feedback.Event) {
+        val now = System.currentTimeMillis(); if (now - fbLast < 2000) return; fbLast = now
+        val hz = if (e.hz >= 1000) String.format(Locale.US, "%.1f kilohertz", e.hz / 1000) else "${e.hz.toInt()} hertz"
+        val before = meterHistory.firstOrNull()
+        val mix = if (before != null) Feedback.ringingMix(before.second, meters.outputs.value) else "MAIN"
+        val mixWord = if (mix == "MAIN") "the main" else "monitor ${mix.removePrefix("OUT")}"
+        val cands = link.present.value.filter { it.code < 16 }.map { it.code }
+        val ch = if (before != null && meters.alive.value) Feedback.culprit(before.first, meters.inputs.value, cands) else null
+        if (ch == null) {
+            log.add(0, String.format(Locale.US, "  ⚠ feedback %.0f Hz (+%.0f dB): no single mic rose on the meters", e.hz, e.prominenceDb))
+            say("Feedback at $hz in $mixWord. I cannot tell which microphone. In MixPad, turn on the Feedback Assistant on $mixWord.")
+            return
+        }
+        val src = Cq.SOURCES.first { it.code == ch }
+        val p = Cq.sendParam(src, mix) ?: return
+        val cut = fbCut[p] ?: 0.0
+        val who = store.labels.value[src.id]?.let { it.name.ifBlank { it.instrument.substringBefore(",") } } ?: src.id
+        if (cut >= 9.0) { say("Feedback at $hz on $who again. I already took $who down 9 dB. Please fix it in MixPad: Feedback Assistant on $mixWord."); return }
+        link.setDb(p, link.db(p) - 3.0); fbCut[p] = cut + 3.0
+        log.add(0, String.format(Locale.US, "  ⚠ feedback %.0f Hz on %s (%s): %s -3 dB in %s", e.hz, who, src.id, src.id, mix))
+        log.add(0, "🟠 MixPad: Feedback Assistant on ${if (mix == "MAIN") "Main LR" else mix}, or a PEQ notch on ${src.id} at ${e.hz.toInt()} Hz")
+        say("Feedback at $hz on $who in $mixWord. I pulled $who down 3 dB.")
+        store.remember(String.format(Locale.US, "feedback at %.0f Hz on %s (%s) in %s", e.hz, who, src.id, mix))
+    }
+
     private fun resumeRta() { if (rtaWasOn) { rtaWasOn = false; toggleRta() } }
 
     private fun toggleRta() {
@@ -425,6 +467,11 @@ class MainActivity : ComponentActivity() {
             }
             Column(Modifier.padding(start = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Chip(if (on) "RTA ON" else "RTA", if (on) Cyan else Grey, filled = on) { toggleRta() }
+                Chip(if (fbGuard) "FB GUARD ON" else "FB GUARD OFF", if (fbGuard) Red else Grey, filled = fbGuard) {
+                    fbGuard = !fbGuard; feedback.reset()
+                    if (fbGuard && !rtaOn) toggleRta()
+                    say(if (fbGuard) "Feedback guard on." else "Feedback guard off.")
+                }
                 Chip("MATCH KD", Amber) {
                     if (rtaJob?.isActive != true) { say("Listening to the room. Tap match again in ten seconds."); toggleRta(); return@Chip }
                     if (rta.seconds() < 6) { say("Still listening, ${6 - rta.seconds()} more seconds."); return@Chip }

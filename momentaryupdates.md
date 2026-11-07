@@ -43,3 +43,9 @@
 > next to prompt box add voice command icon when voice recording for commands is happening add pause button to stop it for a moment if needed , copy ui and vunmeter from ttt for voice inputs
 
 **Status:** v9 mic icon beside the box, recording bar with TTT's VU meter, PAUSE/RESUME, ■ send, ✕ cancel; the mixer's own RTA under research (MixPad's private protocol, TCP 51326 + UDP meters, DigiMixer).
+
+> original cq app shows rta in his interface maybe that can be work around
+
+> build feedback detection in app to detect wich mic is causing it and use build in feedback suppressor on that individual channel
+
+**Status:** v10 the desk's live meters over its private protocol (DigiMixer's handshake), working; v11 feedback guard: phone FFT finds a ringing tone, the desk meters name the mic, -3 dB in the ringing mix (max -9), spoken, orange step for the CQ's Feedback Assistant (it is per output, not per channel, and only MixPad reaches it).
