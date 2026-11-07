@@ -104,3 +104,9 @@
 "I am leaving you unintended now. Do everything. In your own autonomy, and don't uh ask any questions, you finish by yourself."
 "You are going to upload concept once you fix synchronization. Synchronization needs to be fixed inside Ableton Live, pushing every 20 seconds audio to match with band markers."
 (the YouTube upload was stopped by Marko before any file was chosen)
+"You need to find the best way to synchronize these two audio so they match every 20 seconds. Check marks matching in sample level to the same parts of the songs are there and then the length must match camera audio and then mix it 5050 inside the DaVinci itself export upload to YouTube"
+"When I ask. For YouTube. Then you need to take YouTube preset from Da Vinci Resolve, and this is nothing to do with elevated media, this is different part. This is Santoshi. And when you do Santoshi, take the preset For YouTube, which is probably 10 megabits per second, whatever DaVinci has for YouTube, 1080p YouTube export."
+"I am stopping the export. And please let me listen to the thing."
+"Please forget mixing with the desk audio, export video which is open on the timeline and put it in this. YouTube channel that's allRight few data of the concept, everything we know about this concept."
+"Please test the Internet speed and let me know once this video is on the disc, how much time you will need to upload it to YouTube."
+"Once file is ready. You need to close this project, we are going to sleep. And uh we upload tomorrow. When I ask you to upload a latest Santoshi concert, you will know what to do."

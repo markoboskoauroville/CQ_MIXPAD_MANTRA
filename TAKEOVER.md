@@ -26,3 +26,5 @@ action with its time in captures/<time>/actions.log, diff TCP c2d around it. Res
 2. A macOS emulator of the CQ-12T (answers MixPad and our app like the desk) to keep developing without the mixer.
 3. Go through every function of MixPad and log it (PEQ bands, gate, comp, FX, routing, names, scenes, meters 8/9/24).
 4. Desk meters (types 8/9) layout for the feedback guard's culprit and live meters.
+
+**8.11.2026, 00:30 — the embassy video is rendered, upload tomorrow.** `~/Movies/SANTOSHI/render/Santoshi - Indian Embassy Zagreb 7.11.2026.mp4` (4.47 GB, 57:37, YouTube 1080p preset, camera sound only: Marko dropped the desk mix). The desk and camera were synced to the sample every 20 s (Ableton Live Actions v20, Sync Track 2 to Track 1); the synced WAVs are in `~/Movies/SANTOSHI/aligned/SYNC wav`, and the Live set "indijska ambasada 7-nov-21" holds the same sync as warp markers (not saved by me). Next: "upload the latest Santoshi concert" → channel Santoshi Kirtan Band, Unlisted (memory latest-santoshi-concert-upload).
