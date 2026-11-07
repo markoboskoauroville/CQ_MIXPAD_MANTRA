@@ -39,7 +39,11 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
                 val ip = host()
                 if (ip.isBlank()) { delay(2000); continue }
                 try { session(ip); refused.value = 0 } catch (e: Exception) {
-                    if (e is java.net.SocketTimeoutException || e.message?.contains("failed to connect") == true) refused.value = refused.value + 1
+                    // "unreachable" is a moved or missing desk; a plain timeout with the desk reachable is MixPad holding the link
+                    val m = e.message ?: ""
+                    val unreachable = m.contains("EHOSTUNREACH") || m.contains("ENETUNREACH") || m.contains("No route")
+                    if (!unreachable && (e is java.net.SocketTimeoutException || m.contains("failed to connect"))) refused.value = refused.value + 1
+                    if (unreachable) refused.value = 0
                     log("  recorder: ${e.message}")
                 }
                 connected.value = false; out = null; state.value = State.UNKNOWN

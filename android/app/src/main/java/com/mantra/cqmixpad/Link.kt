@@ -44,7 +44,7 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         job = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 val ip = find()
-                if (ip == null) { status.value = "no mixer on the cable: is Ethernet tethering on?"; delay(3000); continue }
+                if (ip == null) { status.value = "no mixer found on the cable or the Wi-Fi: searching"; connected.value = false; delay(3000); continue }
                 try { run(ip) } catch (e: Exception) { status.value = "lost the mixer (${e.message}), trying again" }
                 connected.value = false
                 delay(1500)
@@ -85,7 +85,13 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         val s = Socket()
         s.tcpNoDelay = true
         s.connect(InetSocketAddress(ip, Cq.PORT), 2000)
+        // a desk that went away (cable out, a new address) must be noticed: no byte for 15 s ends the link
+        s.soTimeout = 15000
         socket = s; out = s.getOutputStream(); host.value = ip
+        prefs.edit().putString("ip", ip).apply()
+        val alive = scope.launch(Dispatchers.IO) {        // every 5 s ask the desk for the Main level: it answers
+            while (true) { delay(5000); if (socket !== s) break; send(Cq.get(Cq.masterParam("MAIN")!!)) }
+        }
         connected.value = true
         status.value = "connected to the CQ at $ip"
         values.clear()
@@ -93,6 +99,10 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) { readAll() }
         val input = s.getInputStream()
         val buf = ByteArray(4096)
+        try { readLoop(input, buf, parser) } finally { alive.cancel(); try { s.close() } catch (_: Exception) {} }
+    }
+
+    private fun readLoop(input: java.io.InputStream, buf: ByteArray, parser: Cq.Parser) {
         while (true) {
             val n = input.read(buf)
             if (n < 0) throw java.io.IOException("closed by the mixer")

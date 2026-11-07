@@ -77,3 +77,9 @@
 > After you finish this action, be ready. I'm going to disconnect the cable and you need to run the tests through Wi-Fi because I'm going to connect to my Wi-Fi network this mixer and you need to truly test it through that. So finish the last testings and give me a message waiting for reconnection.
 
 **Status:** v24 armed badges (decoded: 16-bit mask 100 bytes from the end of the full dump), the app finds the mixer on Wi-Fi too. Armed 10 of 16.
+
+> Mixer is on Wi-Fi. Please try to connect to it.
+
+> First of all this mixer doesn't have Wi-Fi built in. What I did I went to network settings I switched IP mode to manual and then back to automatic and I press apply and then in that point it was scanning the new network and it's working.
+
+**Status:** the mixer on his network by cable to the router (192.168.1.62, then .102 after Apply); v25: the link notices a vanished desk (15 s), keeps asking every 5 s, searches again; the recorder no longer blames MixPad for an unreachable address.
