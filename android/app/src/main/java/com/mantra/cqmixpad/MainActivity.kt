@@ -137,6 +137,7 @@ class MainActivity : ComponentActivity() {
         // the meter session stays off until the CQ-12T's meter layout is decoded (it competed for the desk's port)
         if (METERS_DECODED) meters.start()
         recorder = Recorder({ link.host.value }, lifecycleScope) { log.add(0, it) }
+        recorder.startsStore = getSharedPreferences("takes", MODE_PRIVATE)
         recorder.start()
         lifecycleScope.launch {     // a new take while a concert is on: written into that concert
             var was = Recorder.State.UNKNOWN

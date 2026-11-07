@@ -116,8 +116,20 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
     /** Connect attempts that failed in a row (CQ MixPad holding the desk's one private link). */
     val refused = MutableStateFlow(0)
 
+    /** Take start times kept on the phone, so the time survives an app restart during a take. */
+    var startsStore: android.content.SharedPreferences? = null
+
     private fun setState(s: State) {
-        if (s == State.RECORDING && state.value != State.RECORDING) since.value = System.currentTimeMillis()
+        if (s == State.RECORDING && state.value != State.RECORDING) {
+            val now = System.currentTimeMillis()
+            val p = startsStore
+            // a take already running when the app started: its stored start, if this phone saw it begin
+            val stored = p?.getLong("start", 0L) ?: 0L
+            val storedTake = p?.getString("take", "") ?: ""
+            since.value = if (stored > 0 && now - stored < 12 * 3600_000L && (storedTake.isBlank() || storedTake == take.value || state.value == State.UNKNOWN)) stored else now
+            if (since.value == now) p?.edit()?.putLong("start", now)?.putString("take", take.value)?.apply()
+        }
+        if (s == State.STOPPED && state.value == State.RECORDING) startsStore?.edit()?.putLong("start", 0L)?.apply()
         if (s != state.value) log("  recorder: the desk is ${if (s == State.RECORDING) "RECORDING" else "stopped"}")
         state.value = s
     }

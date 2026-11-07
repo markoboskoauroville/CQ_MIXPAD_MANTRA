@@ -96,6 +96,7 @@ class Store(ctx: Context) {
     /** SD takes recorded during this concert ("CQ-MT003 · 17:24"). */
     fun takes(): List<String> = current.value?.let { c -> read(c.id).optJSONArray("takes")?.let { a -> (0 until a.length()).map { a.getString(it) } } } ?: emptyList()
     fun addTake(name: String) {
+        if (takes().any { it.startsWith("$name ") || it.startsWith("$name ·") || it.startsWith("$name:") }) return
         val stamp = SimpleDateFormat("d.M.yyyy HH:mm", Locale.US).format(Date())
         update { j -> (j.optJSONArray("takes") ?: JSONArray().also { j.put("takes", it) }).put("$name · $stamp") }
     }
@@ -135,6 +136,12 @@ class Store(ctx: Context) {
     // ---------- the first two concerts ----------
 
     private fun seed() {
+        if (prefs.getBoolean("seeded", false) && !prefs.getBoolean("takes23", false)) {
+            // v23: the takes on the card so far, named honestly
+            file("2026-10-17 Šubić").takeIf { it.exists() }?.let { f -> val j = JSONObject(f.readText()); j.put("takes", JSONArray().put("CQ-MT001: virtual soundcheck, 12 min of the Šubić concert recorded on 7.11.2026")); f.writeText(j.toString(2)) }
+            file("2026-11-07 Indian Embassy").takeIf { it.exists() }?.let { f -> val j = JSONObject(f.readText()); j.put("takes", JSONArray().put("CQ-MT002, CQ-MT003, CQ-MT004: tests of the app's REC on 7.11.2026 (not the concert)")); f.writeText(j.toString(2)) }
+            prefs.edit().putBoolean("takes23", true).apply()
+        }
         if (prefs.getBoolean("seeded", false)) {
             // v15: the Embassy's start time, for phones seeded before it existed
             val e = file("2026-11-07 Indian Embassy")
