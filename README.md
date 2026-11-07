@@ -19,8 +19,12 @@ finds the mixer by itself on the cable's subnet (port 51325) and remembers the a
 - **RTA**: the phone's microphone, ten octave bands, each band's share of the whole: the measure of
   SANTOSHI_CONCERT_MIX `compare_ref.py`. Amber bars = the Krishna Das references, cyan = the room, numbers under = room
   minus reference. **MATCH KD** sends the averaged RTA to Sonnet; its moves wait for **APPLY**.
-- **Memory**: labels, lessons (`remember`) and every **SAVE** (the whole desk + venue) stay in the app and go into each
-  request, so the mix starts from the last concert.
+- **Concerts** (v3): the amber chip = this concert (place · date). Each concert keeps its own names, roles and mix; NEW
+  CONCERT copies the one marked ▶ as its template; SEND ITS MIX TO THE DESK puts its faders, sends, pans and mutes on the
+  CQ; SAVE stores the desk into it. Šubić 17.10.2026 (the recorded concert, its balance from SANTOSHI_CONCERT_MIX) and
+  Indian Embassy 7.11.2026 are there from the start. Lessons (`remember`) are shared by all concerts.
+- **Voice** (v2): every answer is spoken through Speechify (Beatrice, rendered to a file first, the next key when one is
+  spent); Android's own voice only if every key fails. VOICE ON/OFF in the top bar.
 
 ## What the cable cannot do (the CQ's MIDI protocol V1.2)
 EQ, gain, compressor, Library presets and the names on the desk itself are not in Allen & Heath's MIDI protocol; only
