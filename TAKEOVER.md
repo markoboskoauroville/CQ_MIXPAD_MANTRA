@@ -1,6 +1,8 @@
 # TAKEOVER: CQ MixPad (Mantra)
 
-**State 7.11.2026, 10:25:** v3 on the Pixel (concerts, Speechify). Sonnet answered for real (Ip9 label). The CQ in Multitrack, Ip1–10 on SD/USB, the SD card formatted once and recording 12 min of Šubić. Skill: ~/.claude/skills/concert-mix.
+**State 7.11.2026, 14:10:** v25. Recorder decoded on the desk (Recorder.kt): REC/STOP, state (55-byte status, byte 7 = 0x40), take names, card left (×1.98), armed mask (full dump, 100 bytes from its end); REC tab with time, badges, programme, auto REC 17:25 tonight. Proven over the cable AND over his network (mixer by cable to the router, 192.168.1.102). One private-protocol client at a time: CQ MixPad connected = our recorder refused. SD takes: MT001 Šubić soundcheck, MT002–005 REC tests. Meters/RTA (UDP) not decoded: hidden.
+
+**Earlier, 10:25:** v3 on the Pixel (concerts, Speechify). Sonnet answered for real (Ip9 label). The CQ in Multitrack, Ip1–10 on SD/USB, the SD card formatted once and recording 12 min of Šubić. Skill: ~/.claude/skills/concert-mix.
 
 **Earlier:** v1 written and pushed for the Santoshi concert at the Embassy tonight. Protocol proven on the real
 CQ-12T by hand first (gets from the Pixel: Ip1 muted, Ip1 fader ≈0 dB, Main ≈ −7 dB).
