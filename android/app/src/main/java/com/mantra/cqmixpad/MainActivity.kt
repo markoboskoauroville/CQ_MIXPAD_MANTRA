@@ -91,6 +91,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var speech: Speech
     private lateinit var voice: Voice
     private lateinit var hear: Hear
+    private lateinit var meters: Meters
 
     private val log = mutableStateListOf<String>()
     private val pending = mutableStateListOf<Brain.Action>()
@@ -121,6 +122,13 @@ class MainActivity : ComponentActivity() {
         })
         hear = Hear(this)
         link.start()
+        meters = Meters({ link.host.value }, lifecycleScope) { log.add(0, it) }
+        meters.start()
+        // the RTA candidate (type 23) saved every 2 s for decoding: files/rta23.bin, 760-byte records
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val f = java.io.File(filesDir, "rta23.bin")
+            while (true) { kotlinx.coroutines.delay(2000); meters.raw23?.let { if (f.length() < 3_000_000) f.appendBytes(it) } }
+        }
         setContent { Screen() }
     }
 
@@ -158,6 +166,13 @@ class MainActivity : ComponentActivity() {
         append("MASTERS: ").append(Cq.MIXES.take(9).mapNotNull { m -> Cq.masterParam(m)?.let { p -> link.values[p]?.let { "$m ${Cq.dbText(Cq.valueToDb(it))}" } } }.joinToString(", ")).append('\n')
         Cq.masterMuteParam("MAIN")?.let { append("MAIN master ").append(if (link.muted(it)) "MUTED" else "on").append('\n') }
         for (d in 1..4) link.values[Cq.dcaLevelParam(d)]?.let { append("DCA$d ${Cq.dbText(Cq.valueToDb(it))}${if (link.muted(Cq.dcaMuteParam(d))) " MUTED" else ""}\n") }
+        if (meters.alive.value) {
+            val inp = meters.inputs.value; val o = meters.outputs.value
+            append("LIVE METERS (dBFS, the desk's own): ")
+            append(link.present.value.filter { it.code < 16 && it.code < inp.size }.joinToString(", ") { "${it.id} ${inp[it.code].toInt()}" })
+            if (o.size > 7) append(", Main L ${o[6].toInt()} R ${o[7].toInt()}")
+            append('\n')
+        }
     }
 
     // ---------- Sonnet ----------
@@ -323,6 +338,11 @@ class MainActivity : ComponentActivity() {
                 Column(Modifier.weight(1f)) {
                     Text("CQ MixPad (Mantra)", color = Text1, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(status, color = Grey, fontSize = 11.sp, maxLines = 2)
+                    val alive by meters.alive.collectAsState()
+                    if (alive) { val o by meters.outputs.collectAsState(); if (o.size > 7) Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("MAIN ", color = Grey, fontSize = 10.sp)
+                        LevelBar(o[6], Modifier.width(90.dp).height(5.dp)); Spacer(Modifier.width(3.dp)); LevelBar(o[7], Modifier.width(90.dp).height(5.dp))
+                    } }
                 }
                 if (!micOk) Chip("PERMISSIONS", Amber) { openAppSettings() }
                 if (store.apiKey() == null) Chip("KEY", Amber) { keyDialog = true }
@@ -342,8 +362,10 @@ class MainActivity : ComponentActivity() {
                 for (s in present) {
                     val p = Cq.sendParam(s, mix) ?: continue
                     val l = labels[s.id]
+                    val inMeters by meters.inputs.collectAsState()
                     Strip(top = l?.name?.ifBlank { null } ?: s.id, sub = if (l != null) s.id + " · " + l.instrument else "",
                         db = link.db(p), muted = link.muted(Cq.muteParam(s)),
+                        meter = if (meters.alive.value && s.code < 16 && s.code < inMeters.size) inMeters[s.code] else null,
                         pan = if (mix == "MAIN") link.values[Cq.panMainParam(s)]?.let { Cq.valueToPan(it) } else null,
                         onDb = { link.setDb(p, it) }, onMute = { link.setMute(Cq.muteParam(s), !link.muted(Cq.muteParam(s))) },
                         onPan = { link.setPan(Cq.panMainParam(s), it) })
@@ -515,7 +537,7 @@ private fun Chip(label: String, color: Color, filled: Boolean = false, onClick: 
 
 /** One channel strip: name, mute, fader (the CQ's own taper: travel = the 14-bit value), dB, pan on MAIN. */
 @Composable
-private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Double?, master: Boolean = false,
+private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Double?, master: Boolean = false, meter: Float? = null,
                   onDb: (Double) -> Unit, onMute: () -> Unit, onPan: (Double) -> Unit) {
     val maxV = Cq.dbToValue(Cq.MAX_DB).toFloat()
     val setDb by androidx.compose.runtime.rememberUpdatedState(onDb)
@@ -548,6 +570,7 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
             Text(if (kotlin.math.abs(pan) < 1) "C" else if (pan < 0) "L${(-pan).toInt()}" else "R${pan.toInt()}", color = Grey, fontSize = 9.sp)
         }
         Text(Cq.dbText(db), color = if (muted) Red else Cyan, fontSize = 11.sp)
+        if (meter != null) LevelBar(meter, Modifier.fillMaxWidth().height(5.dp).padding(horizontal = 4.dp))
         val pos = (Cq.dbToValue(db) / maxV).coerceIn(0f, 1f)
         Canvas(Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp).pointerInput(Unit) {
             // relative: the fader moves only by the finger's travel; a touch anywhere never jumps it (live safety)
@@ -611,5 +634,17 @@ private fun VuMeter(db: Float, dim: Boolean, modifier: Modifier) {
         if (n > 0f) drawRoundRect(if (dim) col.copy(alpha = 0.35f) else col, size = Size(w * n, h), cornerRadius = r)
         val p = norm(peak)
         if (p > 0f) drawRect(Sand, Offset((w * p).coerceIn(2f, w - 2f) - 1.5f, 0f), Size(3f, h))
+    }
+}
+
+
+/** A desk meter, horizontal: -60..0 dBFS, green / amber over -12 / red over -3 (TTT's colours). */
+@Composable
+private fun LevelBar(db: Float, modifier: Modifier) {
+    Canvas(modifier) {
+        drawRect(Color(0xFF2A2A2E))
+        val n = ((db + 60f) / 60f).coerceIn(0f, 1f)
+        val c = when { db > -3f -> Color(0xFF9B3B33); db > -12f -> Color(0xFFF0883E); else -> Color(0xFF56D364) }
+        if (n > 0f) drawRect(c, size = Size(size.width * n, size.height))
     }
 }
