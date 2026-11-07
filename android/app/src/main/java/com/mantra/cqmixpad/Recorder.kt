@@ -106,9 +106,15 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
         state.value = s
     }
 
+    /** Network writes never on the main thread (Android throws NetworkOnMainThreadException there): one writer thread. */
+    private val writer = java.util.concurrent.Executors.newSingleThreadExecutor()
     private fun send(b: ByteArray): Boolean {
         val o = out ?: return false
-        return try { synchronized(this) { o.write(b); o.flush() }; true } catch (_: Exception) { false }
+        writer.execute {
+            try { synchronized(this) { o.write(b); o.flush() }; log("  recorder: sent to the desk") }
+            catch (e: Exception) { log("  recorder: could not send (${e.javaClass.simpleName})") }
+        }
+        return true
     }
     fun rec(): Boolean = send(byteArrayOf(0xF7.toByte(), 0x11, 0x11, 0x11, 0x03, 0xFF.toByte(), 0, 0, 0))
     fun stop(): Boolean = send(byteArrayOf(0xF7.toByte(), 0x11, 0x11, 0x10, 0x01, 0xFF.toByte(), 0, 0, 0,
