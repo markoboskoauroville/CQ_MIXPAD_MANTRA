@@ -3,7 +3,7 @@
 # Signing: the APK is signed with the keystore in the secret ANDROID_DEBUG_KEYSTORE_B64 (base64 of the Mac's
 # ~/.android/debug.keystore), so a CI build installs over a Mac build and over the one before it. Without that
 # secret the runner's fresh debug key signs it: it then installs only after the old app is uninstalled.
-name: Android APK  # TEMPLATE android-gradle.yml from MANTRA_MANIFEST/workflows (source: MANTRA_REMOTE_VNC_TAILSCALE v26)
+name: Android APK  # CQ MixPad (Mantra). TEMPLATE android-gradle.yml from MANTRA_MANIFEST/workflows (source: MANTRA_REMOTE_VNC_TAILSCALE v26)
 
 on:
   push:
@@ -54,7 +54,7 @@ jobs:
       - name: Build
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          ./gradlew --no-daemon testDebugUnitTest assembleDebug
 
       - uses: actions/upload-artifact@v4
         with:
