@@ -76,10 +76,15 @@ class Rta {
     val live = MutableStateFlow(DoubleArray(10) { -60.0 })
     val level = MutableStateFlow(-90.0)
     private val sum = DoubleArray(10); private var frames = 0
+    private var levelSum = 0.0
+    /** True while the app itself is speaking: those frames are not the room (the RTA must not hear its own voice). */
+    @Volatile var deaf = false
+    /** The room's mean level over the averaged window (dBFS), for the "is there music" check. */
+    fun meanLevel(): Double = if (frames == 0) -90.0 else 10 * log10(levelSum / frames + 1e-12)
     @Volatile private var running = false
 
     fun average(): DoubleArray = if (frames == 0) live.value.copyOf() else share(sum.map { it / frames }.toDoubleArray())
-    fun reset() { sum.fill(0.0); frames = 0 }
+    fun reset() { sum.fill(0.0); frames = 0; levelSum = 0.0 }
     fun seconds(): Int = frames * 4096 / 48000
 
     private fun share(power: DoubleArray): DoubleArray {
@@ -90,7 +95,7 @@ class Rta {
     fun text(): String {
         val a = average()
         return buildString {
-            append("RTA through the phone microphone, ${seconds()} s averaged, room level ${level.value.toInt()} dBFS. ")
+            append("RTA through the phone microphone, ${seconds()} s averaged, room level ${meanLevel().toInt()} dBFS. ")
             append("Band share of the whole (dB) 31..16k: ").append(a.joinToString(", ") { String.format(java.util.Locale.US, "%.1f", it) })
             append(". Krishna Das reference: ").append(KD.joinToString(", ") { String.format(java.util.Locale.US, "%.1f", it) })
             append(". Mix minus reference: ").append(a.indices.joinToString(", ") { NAMES[it] + " " + String.format(java.util.Locale.US, "%+.1f", a[it] - KD[it]) })
@@ -122,10 +127,12 @@ class Rta {
                 val re = DoubleArray(n) { ring[it] / 32768.0 * window[it] }; val im = DoubleArray(n)
                 var ms = 0.0; for (s in hop) { val x = s / 32768.0; ms += x * x }
                 level.value = 10 * log10(ms / hop.size + 1e-12)
+                if (deaf) continue                                    // our own voice: not the room
                 fft(re, im)
                 val p = DoubleArray(10)
                 for (k in 1 until n / 2) { val b = bin[k]; if (b >= 0) p[b] += re[k] * re[k] + im[k] * im[k] }
                 for (i in 0 until 10) { smooth[i] = 0.8 * smooth[i] + 0.2 * p[i]; sum[i] += p[i] }
+                levelSum += ms / hop.size
                 frames++
                 live.value = share(smooth)
             }

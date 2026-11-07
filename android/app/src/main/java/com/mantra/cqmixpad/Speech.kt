@@ -21,7 +21,8 @@ import java.util.Locale
  * (files/speechify.keys, one per line, put there from the Mac over adb); a spent or refused key passes to the next.
  * Only when every key fails does Android's own voice speak, and the log says so.
  */
-class Speech(private val ctx: Context, private val scope: CoroutineScope, private val log: (String) -> Unit) {
+class Speech(private val ctx: Context, private val scope: CoroutineScope, private val log: (String) -> Unit,
+             private val speaking: (Boolean) -> Unit = {}) {
     private val keysFile = File(ctx.filesDir, "speechify.keys")
     private val prefs = ctx.getSharedPreferences("speech", Context.MODE_PRIVATE)
     private var player: MediaPlayer? = null
@@ -41,18 +42,21 @@ class Speech(private val ctx: Context, private val scope: CoroutineScope, privat
             val f = withContext(Dispatchers.IO) { render(text) }
             if (my != n) return@launch
             if (f != null) {
+                speaking(true)
                 player = MediaPlayer().apply {
-                    setDataSource(f.absolutePath); setOnCompletionListener { it.release(); if (player === it) player = null }
+                    setDataSource(f.absolutePath)
+                    setOnCompletionListener { it.release(); if (player === it) player = null; scope.launch { kotlinx.coroutines.delay(300); speaking(false) } }
                     prepare(); start()
                 }
             } else {
                 log("  ! Speechify did not answer: Android's voice instead")
-                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "say")
+                speaking(true); tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "say")
+                scope.launch { kotlinx.coroutines.delay(400L + text.length * 70L); speaking(false) }
             }
         }
     }
 
-    fun stop() { n++; player?.let { try { it.stop(); it.release() } catch (_: Exception) {} }; player = null; tts?.stop() }
+    fun stop() { n++; player?.let { try { it.stop(); it.release() } catch (_: Exception) {} }; player = null; tts?.stop(); speaking(false) }
     fun shutdown() { stop(); tts?.shutdown(); tts = null }
 
     private fun render(text: String): File? {

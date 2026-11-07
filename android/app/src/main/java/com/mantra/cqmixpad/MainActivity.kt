@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
         store = Store(this)
         link = Link(this, lifecycleScope)
         brain = Brain(store)
-        speech = Speech(this, lifecycleScope) { log.add(0, it) }
+        speech = Speech(this, lifecycleScope, { log.add(0, it) }, { on -> rta.deaf = on })
         voice = Voice(this, onPartial = { heard = it }, onFinal = { t ->
             heard = ""; listening = false
             if (rtaWasOn) { rtaWasOn = false; toggleRta() }
@@ -395,9 +395,9 @@ class MainActivity : ComponentActivity() {
             Column(Modifier.padding(start = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Chip(if (on) "RTA ON" else "RTA", if (on) Cyan else Grey, filled = on) { toggleRta() }
                 Chip("MATCH KD", Amber) {
-                    if (rtaJob?.isActive != true) { toggleRta(); say("Listening to the room. Tap match again in ten seconds."); return@Chip }
+                    if (rtaJob?.isActive != true) { say("Listening to the room. Tap match again in ten seconds."); toggleRta(); return@Chip }
                     if (rta.seconds() < 6) { say("Still listening, ${6 - rta.seconds()} more seconds."); return@Chip }
-                    if (rta.level.value < -55) { say("I hear no music in the room, nothing to match."); return@Chip }
+                    if (rta.meanLevel() < -55) { say("I hear no music in the room, nothing to match."); return@Chip }
                     command("Compare the RTA with the Krishna Das profile and suggest how to fit the mix, vocals in the first plan.", fromVoice = false, withRta = true)
                 }
             }
