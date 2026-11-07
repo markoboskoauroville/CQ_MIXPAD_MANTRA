@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
-import android.speech.tts.TextToSpeech
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -87,7 +86,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var brain: Brain
     private val rta = Rta()
     private var rtaJob: Job? = null
-    private var tts: TextToSpeech? = null
+    private lateinit var speech: Speech
     private lateinit var voice: Voice
 
     private val log = mutableStateListOf<String>()
@@ -105,7 +104,7 @@ class MainActivity : ComponentActivity() {
         store = Store(this)
         link = Link(this, lifecycleScope)
         brain = Brain(store)
-        tts = TextToSpeech(this) { tts?.language = Locale.US }
+        speech = Speech(this, lifecycleScope) { log.add(0, it) }
         voice = Voice(this, onPartial = { heard = it }, onFinal = { t ->
             heard = ""
             if (!t.isNullOrBlank()) command(t, fromVoice = true) else say("I did not catch that.")
@@ -125,11 +124,11 @@ class MainActivity : ComponentActivity() {
         micOk = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
     }
 
-    override fun onDestroy() { tts?.shutdown(); voice.stop(); rta.stop(); super.onDestroy() }
+    override fun onDestroy() { speech.shutdown(); voice.stop(); rta.stop(); super.onDestroy() }
 
     private fun say(t: String) {
         log.add(0, t); while (log.size > 30) log.removeAt(log.lastIndex)
-        if (speakAloud) tts?.speak(t, TextToSpeech.QUEUE_FLUSH, null, "say")
+        if (speakAloud) speech.say(t)
     }
 
     // ---------- the desk as text, for Sonnet ----------
@@ -250,7 +249,7 @@ class MainActivity : ComponentActivity() {
                 }
                 if (!micOk) Chip("PERMISSIONS", Amber) { openAppSettings() }
                 if (store.apiKey() == null) Chip("KEY", Amber) { keyDialog = true }
-                Chip(if (speakAloud) "VOICE ON" else "VOICE OFF", if (speakAloud) Green else Grey) { speakAloud = !speakAloud; tts?.stop() }
+                Chip(if (speakAloud) "VOICE ON" else "VOICE OFF", if (speakAloud) Green else Grey) { speakAloud = !speakAloud; speech.stop() }
                 Chip("SAVE", Blue) { saveConcert() }
             }
             // mixes
@@ -350,7 +349,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxWidth())
             }
             Chip("SEND", if (busy) Grey else Cyan, filled = !busy) { if (text.isNotBlank()) { command(text.trim(), false); text = "" } }
-            Chip("SPEAK", if (micOk) Green else Amber, filled = micOk) { if (micOk) { tts?.stop(); voice.listen() } else openAppSettings() }
+            Chip("SPEAK", if (micOk) Green else Amber, filled = micOk) { if (micOk) { speech.stop(); voice.listen() } else openAppSettings() }
         }
     }
 
