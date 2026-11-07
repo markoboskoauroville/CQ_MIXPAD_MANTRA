@@ -71,12 +71,19 @@ class Meters(private val host: () -> String, private val scope: CoroutineScope, 
     private var frames = 0; private var moving = false
     private var last8: ByteArray? = null
 
+    @Volatile private var pausedUntil = 0L
+    /** Stand aside for [seconds] (the desk takes one private-protocol client at a time). */
+    fun pause(seconds: Int) { pausedUntil = System.currentTimeMillis() + seconds * 1000L; stopSession = true }
+    @Volatile private var stopSession = false
+
     fun start() {
         if (job?.isActive == true) return
         job = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 val ip = host()
                 if (ip.isBlank()) { delay(2000); continue }
+                if (System.currentTimeMillis() < pausedUntil) { delay(1000); continue }
+                stopSession = false
                 try { session(ip) } catch (e: Exception) { alive.value = false; log("  meters: ${e.message}") }
                 delay(3000)
             }
@@ -124,6 +131,7 @@ class Meters(private val host: () -> String, private val scope: CoroutineScope, 
             val buf = ByteArray(4096); var quiet = 0
             while (true) {
                 val p = DatagramPacket(buf, buf.size)
+                if (stopSession) throw java.io.IOException("paused for the proxy")
                 try { udp.receive(p) } catch (_: java.net.SocketTimeoutException) { if (++quiet > 5) throw java.io.IOException("meter stream stopped"); continue }
                 quiet = 0
                 capture(buf, p.length)

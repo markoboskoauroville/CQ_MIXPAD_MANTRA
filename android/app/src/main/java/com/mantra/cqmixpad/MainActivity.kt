@@ -142,6 +142,15 @@ class MainActivity : ComponentActivity() {
             }
         }
         lifecycleScope.launch { recordingWatch() }
+        // learning MixPad's registration: files/proxy.flag starts the proxy (the meter session pauses meanwhile)
+        val proxy = Proxy({ link.host.value }, filesDir, lifecycleScope) { log.add(0, it) }
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val flag = java.io.File(filesDir, "proxy.flag")
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                if (flag.exists()) { val s = flag.readText().trim().toIntOrNull() ?: 180; flag.delete(); meters.pause(s + 5); proxy.start(s) }
+            }
+        }
         rta.onSpectrum = { spec -> if (fbGuard) feedback.onSpectrum(spec)?.let { e -> runOnUiThread { onFeedback(e) } } }
         // the RTA candidate (type 23) saved every 2 s for decoding: files/rta23.bin, 760-byte records
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
