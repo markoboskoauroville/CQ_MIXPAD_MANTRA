@@ -107,6 +107,16 @@ Ip channel stride 280 bytes (Ip1 HPF freq at 484, Ip2 at 764); Ip1's Main fader 
 Ip2's at 20084/20086/20096; USB out patch table at 38440 (4 bytes per slot: source u16, side, flag);
 FX1 parameters at 40278 + 2·param, FX2 at 40448 + 2·param. Names are in each channel block as ASCII.
 
-### Not toured (on purpose)
-+48 V (phantom on a live input), sample rate (restarts the audio), scene store/recall and Library recall (would
-overwrite the desk), Network settings. Custom layers, soft keys and footswitch not changed.
+### Not toured
+Left out on purpose (could hurt the desk or the sound): +48 V, sample rate (restarts audio), scene store/recall and
+Library recall (overwrite the desk), network settings.
+
+Not toured yet (real gaps, decoded from the dump layout only where noted):
+- Main LR processing: its PEQ bands, its compressor (only the Main fader and pan were moved; Main LR PEQ is block 2F/0F RTA).
+- Outputs 1–6 PEQ bands (type and in/out and delay toured; GEQ values not), output compressor if any.
+- Channels Ip2–Ip10 processing: the same stride as Ip1 and Ip4, toured on Ip1 and Ip4 only (Ip2 by accident via the stereo link).
+- ST IN, USB and Bluetooth channel processing (only their routing and source point were toured).
+- FX1/FX2 inner PEQ, INPUTS and OUTPUTS tabs (only the CONTROL tab was toured).
+- Gain Assistant "Auto Set" button, Input Library, custom layers (only the page was seen), soft keys, footswitch
+  tip/ring assignments, Mute Groups for every input (one input and one group only), DCAs for every input.
+- Meters: type 8 (inputs) mapped partly, type 9 (outputs, Main, FX) not split, type 24 not identified.
