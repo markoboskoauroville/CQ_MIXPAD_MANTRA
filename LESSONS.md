@@ -16,3 +16,9 @@
   phone but accepts it on the Mac.
 - **7.11.2026:** The Pixel's shell cannot run tcpdump; sniffing between two Wi-Fi devices is not possible from the Mac;
   only a proxy works.
+- **8.11.2026 (protocol tour):** Stereo Link in Config › Inputs copies the odd channel onto the even one (EQ, HPF, fader,
+  pan, sends, Quick label); unlinking does not give the even channel back. Never toggle it in a test. Jadran (Ip2) was
+  restored by injecting its values from the first dump; only its Quick label still says "Vocal Low" (was "Vocal High").
+- **8.11.2026:** MixPad's knobs answer only a slow horizontal drag (cliclick dd/dm/du), not the wheel or a fast drag.
+  `macro capture-window` of MixPad returned a stale picture: use `macro capture-screen 2`.
+- **8.11.2026:** The desk never echoes a change to its sender; check the truth in the connect dump (`tools/cq_dump.py`).

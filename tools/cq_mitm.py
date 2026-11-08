@@ -96,7 +96,7 @@ def local_bridge(mp_port):
         while True:
             d, addr = a.recvfrom(65535)
             if addr[0] == DESK:
-                rec("udp_d2c.bin", d); a.sendto(d, ("127.0.0.1", mp_port))
+                rec("udp_d2c.bin", d); a.sendto(d, ("127.0.0.1", state["mp_udp"]))
     threading.Thread(target=desk_to_mp, daemon=True).start()
     def mp_to_desk():
         while state["desk_udp"] is None: time.sleep(0.1)
@@ -138,14 +138,20 @@ def control():
         c, addr = srv.accept()
         state["phone"] = addr[0]
         log(f"TCP: CQ MixPad connected from {addr}")
-        d = socket.create_connection((DESK, 51326), timeout=5); d.settimeout(None)
+        d = socket.create_connection((DESK, 51326), timeout=5); d.settimeout(None); state["desk_sock"] = d
         log(f"TCP: connected to the desk {DESK}:51326")
 
+        conn = {"seen": False}
+
         def c2d_sniff(b):
-            if state["mp_udp"] is None:
+            if not conn["seen"]:
                 p = frames_port(b)
                 if p:
+                    conn["seen"] = True
+                    first = state["mp_udp"] is None
                     state["mp_udp"] = p; log(f"MixPad's UDP port {p}")
+                    if not first:
+                        log("reconnect: the bridges stay, MixPad's new port is used"); return
                     if LOCAL:
                         q = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); q.bind(("0.0.0.0", 0)); state["q_sock"] = q
                         log(f"local mode: the desk is told our UDP port {q.getsockname()[1]}"); local_bridge(p)
@@ -161,7 +167,22 @@ def control():
         threading.Thread(target=pipe, args=(d, c, "tcp_d2c.bin", d2c_sniff), daemon=True).start()
 
 
+def injector():
+    """127.0.0.1:51399: one line of hex per message ("f7 0c 0c 0d 00 00 31 62"), sent to the desk on MixPad's own
+    session, recorded in tcp_inj.bin. Used to put a value back exactly after a test (8.11.2026)."""
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 51399)); srv.listen(2)
+    while True:
+        c, _ = srv.accept()
+        for line in c.makefile():
+            data = bytes.fromhex(line.strip())
+            if data and state.get("desk_sock"):
+                state["desk_sock"].sendall(data); rec("tcp_inj.bin", data); log("INJECT " + data.hex(" "))
+        c.close()
+
+
 if __name__ == "__main__":
+    threading.Thread(target=injector, daemon=True).start()
     log(f"cq_mitm: desk {DESK}, capturing to {os.path.abspath(OUT)}")
     threading.Thread(target=finder, daemon=True).start()
     control()
