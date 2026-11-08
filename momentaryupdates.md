@@ -114,3 +114,10 @@
 ## 8.11.2026, ~16:30 (Mac session, the full protocol tour)
 "let's continue working on my app to control CQ Mixer, my private app. We started to sniff the traffic between my Mixer and the original Mixpad app. Please let me know if everything is sniffed. Do we have the whole protocol reverse-engineered"
 "the mixer is on the Wi-Fi network. For testing, the Pixel 7 is on the cable and also on the Wi-Fi network. CQ Mixpad is on Mac. CQ Mixpad is on the Pixel 7. Mixpad is on Inside. That's the last concept, the full one-hour session with all the tracks, so you have something to play back, like a virtual sound check. Let's do this. Everything is ready. Only your intelligence is missing, Baba"
+
+## 8.11.2026, ~18:05 (Mac session: calibration, Swift copy of MixPad, the RTA mix to USB)
+"Please make a repository in GitHub, a public one, with the name cq_mixpad_protocol. Between each word. This is our database of codes. Any app using CQ can really get its knowledge from there."
+"Yes, you start calibration. Also, as a test project, you need to build a Swift app which is going to control this mixer, similar to my CQ Mixpad. Basically, copying it to the Swift version."
+"The task is now: I plugged in a USB stick. You need to do the mix based on RTAs. You look at RTAs, and the mix needs to be in good balance, comparing to Krishnadas."
+"You need to pick 15 minutes from the whole concert. You play the sound, and you can see which signals are there, which mics are active, and then use them to mix and print the mix on my USB stick plugged into the mixer. Then I will listen to it. Are you good with the mixer or not?"
+"As you know, vocal is most important, then Igor guitar, then Snoopy guitar, and back vocals need to be the same loudness as main vocals, since it's a call-and-response exercise."
