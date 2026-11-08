@@ -3,7 +3,7 @@
 the messages, close. The desk keeps playing/recording after we let go. Fails if another client (MixPad, our app)
 holds the desk. Shortcuts: play, stop, seek=SECONDS, usbrec, usbstop. 8.11.2026."""
 import socket, struct, sys, time
-SC = {"play": "f7 11 11 10 02 ff 00 00 00", "stop": "f7 11 11 10 01 ff 00 00 00",
+SC = {"next": "f7 11 11 10 04 ff 00 00 00", "prev": "f7 11 11 10 00 ff 00 00 00", "play": "f7 11 11 10 02 ff 00 00 00", "stop": "f7 11 11 10 01 ff 00 00 00",
       "usbrec": "f7 11 11 0f 03 ff 00 00 00", "usbstop": "f7 11 11 0f 01 ff 00 00 00"}
 ip = sys.argv[1]
 u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); u.bind(("0.0.0.0", 0)); port = u.getsockname()[1]
