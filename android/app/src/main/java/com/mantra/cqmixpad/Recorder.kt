@@ -228,7 +228,29 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
     private fun patch(off: Int, v: Int) { val d = state0.value ?: return; if (off + 1 >= d.size) return
         val c = d.copyOf(); c[off] = (v and 0xFF).toByte(); c[off + 1] = ((v shr 8) and 0xFF).toByte(); state0.value = c }
     private fun dbOf(off: Int) = word(off)?.let { (it - 0x8000) / 256.0 }
-    fun hpfHzNow(ch: Int) = word(484 + 280 * ch)?.let { 82.5 * Math.pow(10.0, (it - 0x4E9B) / 15316.0) }
+    /** Calibrated 8.11.2026 (cq_mixpad_protocol "Calibrated scales", 15 points each, read on CQ MixPad's own screen):
+     *  frequency Hz = 4 * 2^(raw/4608); times us = 2^(raw/1793.44); comp ratio and PEQ width are index tables. */
+    companion object Scales {
+        fun hzOf(raw: Int) = 4.0 * Math.pow(2.0, raw / 4608.0)
+        fun rawHz(hz: Double) = Math.round(4608 * Math.log(hz.coerceIn(20.0, 20000.0) / 4.0) / Math.log(2.0)).toInt().coerceIn(0, 0xFFFF)
+        fun msOf(raw: Int) = Math.pow(2.0, raw / 1793.44) / 1000.0
+        fun rawMs(ms: Double) = Math.round(1793.44 * Math.log(ms.coerceIn(0.001, 5000.0) * 1000.0) / Math.log(2.0)).toInt().coerceIn(0, 0xFFFF)
+        val RATIOS = doubleArrayOf(1.0, 1.03, 1.05, 1.07, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.3, 2.5, 2.7,
+            3.0, 3.3, 3.5, 3.7, 4.0, 4.3, 4.5, 4.7, 5.0, 5.3, 5.5, 5.7, 6.0, 7.0, 8.0, 10.0, 12.0, 16.0, 20.0, 40.0, Double.POSITIVE_INFINITY)
+        /** PEQ width in octaves by index 1..25 (0 = shelf). */
+        val WIDTHS = doubleArrayOf(0.0, 1.5, 1.4, 1.3, 1.2, 1.1, 1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 2.0 / 3, 0.6, 0.55, 0.5, 0.45, 0.4,
+            1.0 / 3, 0.3, 0.25, 0.2, 1.0 / 6, 0.13, 1.0 / 9)
+        fun ratioIndex(r: Double) = RATIOS.indices.minByOrNull { Math.abs(Math.log(RATIOS[it].coerceAtMost(100.0)) - Math.log(r.coerceIn(1.0, 100.0))) } ?: 0
+        fun widthIndex(oct: Double) = (1 until WIDTHS.size).minByOrNull { Math.abs(Math.log(WIDTHS[it]) - Math.log(oct.coerceIn(0.1, 1.5))) } ?: 16
+    }
+    fun hpfHzNow(ch: Int) = word(484 + 280 * ch)?.let { hzOf(it) }
+    fun peqHzNow(ch: Int, band: Int) = word(522 + 280 * ch + 6 * band)?.let { hzOf(it) }
+    fun peqWidthNow(ch: Int, band: Int) = word(524 + 280 * ch + 6 * band)?.let { if (it in 1..25) WIDTHS[it] else null }
+    fun compNow(ch: Int): String? { val b = 280 * ch; val r = state0.value?.getOrNull(580 + b)?.toInt()?.and(0xFF) ?: return null
+        val thr = dbOf(576 + b) ?: return null
+        return String.format(java.util.Locale.US, "comp %.1f dB %s:1 att %.1f ms rel %.0f ms gain %+.1f", thr,
+            RATIOS.getOrNull(r)?.let { if (it.isInfinite()) "inf" else "%.2f".format(java.util.Locale.US, it).trimEnd('0').trimEnd('.') } ?: "?",
+            word(572 + b)?.let { msOf(it) } ?: 0.0, word(574 + b)?.let { msOf(it) } ?: 0.0, dbOf(578 + b) ?: 0.0) }
     fun hpfOnNow(ch: Int) = word(486 + 280 * ch)?.let { (it and 0xFF) == 1 }
     fun peqNow(ch: Int, band: Int) = dbOf(520 + 280 * ch + 6 * band)
     fun trimNow(ch: Int) = dbOf(656 + 280 * ch)
@@ -246,9 +268,19 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
     /** PEQ band gain (band 0 LF, 1 LM, 2 HM, 3 HF) on Ip channel 0..9, dB. */
     fun peqGain(ch: Int, band: Int, db: Double): Boolean { val v = dbRaw(db.coerceIn(-15.0, 15.0)); patch(520 + 280 * ch + 6 * band, v); return send(m(0x0F, 0x0C, ch, band, v)) }
     fun peqIn(ch: Int, on: Boolean): Boolean = send(m(0x0F, 0x10, ch, 0, if (on) 1 else 0))
-    /** HPF on/off and frequency (Hz = 82.5 * 10^((raw - 0x4E9B)/15316), two measured points; kept to 20..400 Hz). */
+    /** PEQ band frequency (Hz) and width (octaves, nearest of the desk's 25 widths). */
+    fun peqHz(ch: Int, band: Int, hz: Double): Boolean { val v = rawHz(hz); patch(522 + 280 * ch + 6 * band, v); return send(m(0x0F, 0x0D, ch, band, v)) }
+    fun peqWidth(ch: Int, band: Int, oct: Double): Boolean { val v = widthIndex(oct); patch(524 + 280 * ch + 6 * band, v); return send(m(0x0F, 0x0E, ch, band, v)) }
+    /** Compressor (block 10): in 0C, threshold 0E (dB), ratio 0F (index), gain 10 (dB), attack 11, release 12 (ms). */
+    fun compIn(ch: Int, on: Boolean): Boolean = send(m(0x10, 0x0C, ch, 0, if (on) 1 else 0))
+    fun compThreshold(ch: Int, db: Double): Boolean { val v = dbRaw(db.coerceIn(-46.0, 18.0)); patch(576 + 280 * ch, v); return send(m(0x10, 0x0E, ch, 0, v)) }
+    fun compRatio(ch: Int, r: Double): Boolean { val v = ratioIndex(r); state0.value?.let { d -> word(580 + 280 * ch)?.let { patch(580 + 280 * ch, (it and 0xFF00) or v) } }; return send(m(0x10, 0x0F, ch, 0, v)) }
+    fun compGain(ch: Int, db: Double): Boolean { val v = dbRaw(db.coerceIn(0.0, 18.0)); patch(578 + 280 * ch, v); return send(m(0x10, 0x10, ch, 0, v)) }
+    fun compAttack(ch: Int, ms: Double): Boolean { val v = rawMs(ms.coerceIn(0.3, 300.0)); patch(572 + 280 * ch, v); return send(m(0x10, 0x11, ch, 0, v)) }
+    fun compRelease(ch: Int, ms: Double): Boolean { val v = rawMs(ms.coerceIn(50.0, 2000.0)); patch(574 + 280 * ch, v); return send(m(0x10, 0x12, ch, 0, v)) }
+    /** HPF on/off and frequency (Hz = 4 * 2^(raw/4608), calibrated; kept to 20..400 Hz). */
     fun hpf(ch: Int, on: Boolean): Boolean { word(486 + 280 * ch)?.let { patch(486 + 280 * ch, (it and 0xFF00) or (if (on) 1 else 0)) }; return send(m(0x0C, 0x0C, ch, 0, if (on) 1 else 0)) }
-    fun hpfHz(ch: Int, hz: Double): Boolean { val v = (0x4E9B + 15316 * Math.log10(hz.coerceIn(20.0, 400.0) / 82.5)).toInt().coerceIn(0, 0xFFFF)
+    fun hpfHz(ch: Int, hz: Double): Boolean { val v = rawHz(hz.coerceIn(20.0, 400.0))
         patch(484 + 280 * ch, v); return send(m(0x0C, 0x0D, ch, 0, v)) }
 
     /** The SD player (block 11 param 10) and the USB stick's stereo recorder (param 0F). */

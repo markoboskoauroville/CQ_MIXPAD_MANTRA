@@ -279,7 +279,9 @@ class MainActivity : ComponentActivity() {
             append("INPUT SETTINGS NOW (from the desk): ")
             append((0 until 10).joinToString("; ") { k ->
                 fun f(d: Double?) = d?.let { String.format(Locale.US, "%+.1f", it) } ?: "?"
-                "Ip${k + 1} trim ${f(recorder.trimNow(k))}, HPF ${if (recorder.hpfOnNow(k) == true) String.format(Locale.US, "%.0f Hz", recorder.hpfHzNow(k) ?: 0.0) else "off"}, EQ LF ${f(recorder.peqNow(k, 0))} LM ${f(recorder.peqNow(k, 1))} HM ${f(recorder.peqNow(k, 2))} HF ${f(recorder.peqNow(k, 3))}"
+                "Ip${k + 1} trim ${f(recorder.trimNow(k))}, HPF ${if (recorder.hpfOnNow(k) == true) String.format(Locale.US, "%.0f Hz", recorder.hpfHzNow(k) ?: 0.0) else "off"}, EQ " +
+                    listOf("LF", "LM", "HM", "HF").mapIndexed { b, n -> "$n ${f(recorder.peqNow(k, b))}@${recorder.peqHzNow(k, b)?.let { String.format(Locale.US, "%.0f", it) } ?: "?"}" }.joinToString(" ") +
+                    (recorder.compNow(k)?.let { ", $it" } ?: "")
             }).append('\n')
         }
         if (METERS_DECODED && meters.alive.value) {
@@ -311,7 +313,7 @@ class MainActivity : ComponentActivity() {
                     if (!withRta || act.name in setOf("remember", "note_for_marko", "set_label")) apply(act)
                 }
                 // the concert keeps what was done tonight
-                if (!withRta && a.actions.any { it.name in setOf("set_level", "change_level", "set_mute", "set_pan", "set_eq", "set_hpf", "set_trim") }) {
+                if (!withRta && a.actions.any { it.name in setOf("set_level", "change_level", "set_mute", "set_pan", "set_eq", "set_hpf", "set_trim", "set_comp") }) {
                     kotlinx.coroutines.delay(400); store.saveMix(HashMap(link.values), deskText())
                 }
                 // always spoken: Sonnet's sentence, or what was done when it gave none
@@ -381,10 +383,23 @@ class MainActivity : ComponentActivity() {
                 val ok = recorder.trim(c, i.optDouble("db", 0.0))
                 log.add(0, if (ok) "  ✓ ${a.text()}" else "  ✗ ${a.text()} (no private link to the desk)")
             }
+            "set_comp" -> {
+                val c = Cq.src(ch)?.code?.takeIf { ch.startsWith("Ip") && it < 10 } ?: return log.add(0, "  ✗ ${a.text()} (compressor only on Ip1..Ip10)")
+                var ok = true
+                if (i.has("threshold_db")) ok = recorder.compThreshold(c, i.optDouble("threshold_db")) && ok
+                if (i.has("ratio")) ok = recorder.compRatio(c, i.optDouble("ratio")) && ok
+                if (i.has("gain_db")) ok = recorder.compGain(c, i.optDouble("gain_db")) && ok
+                if (i.has("attack_ms")) ok = recorder.compAttack(c, i.optDouble("attack_ms")) && ok
+                if (i.has("release_ms")) ok = recorder.compRelease(c, i.optDouble("release_ms")) && ok
+                if (i.has("on")) ok = recorder.compIn(c, i.optBoolean("on")) && ok
+                log.add(0, if (ok) "  ✓ ${a.text()}" else "  ✗ ${a.text()} (no private link to the desk)")
+            }
             "set_eq", "set_hpf" -> {
                 val c = Cq.src(ch)?.code?.takeIf { ch.startsWith("Ip") && it < 10 } ?: return log.add(0, "  ✗ ${a.text()} (EQ only on Ip1..Ip10)")
                 val ok = if (a.name == "set_eq") {
                     val band = listOf("LF", "LM", "HM", "HF").indexOf(i.optString("band")).coerceAtLeast(0)
+                    (!i.has("freq_hz") || recorder.peqHz(c, band, i.optDouble("freq_hz"))) &&
+                    (!i.has("width_oct") || band == 0 || band == 3 || recorder.peqWidth(c, band, i.optDouble("width_oct"))) &&
                     recorder.peqGain(c, band, i.optDouble("gain_db", 0.0)) && recorder.peqIn(c, true)
                 } else {
                     val on = i.optBoolean("on", true)

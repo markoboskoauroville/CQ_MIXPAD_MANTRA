@@ -18,7 +18,9 @@ import os, socket, struct, sys, threading, time
 DESK = sys.argv[1] if len(sys.argv) > 1 else "192.168.1.102"
 # --local: CQ MixPad runs on this same Mac ("Other..." -> 127.0.0.1). Its UDP port is taken by MixPad itself, so the
 # proxy tells the desk its OWN port instead (rewriting MixPad's handshake) and forwards the desk's stream to MixPad.
-LOCAL = "--local" in sys.argv
+LOCAL = "--local" in sys.argv or "--sandbox" in sys.argv
+# --sandbox: MixPad runs in the Mantra Sandbox emulator ("Other..." -> 10.0.2.2); like --local, plus a UDP redirect.
+SANDBOX = "--sandbox" in sys.argv
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "captures", time.strftime("%Y%m%d-%H%M%S"))
 os.makedirs(OUT, exist_ok=True)
 lock = threading.Lock()
@@ -136,7 +138,7 @@ def control():
     srv.bind(("0.0.0.0", 51326)); srv.listen(4)
     while True:
         c, addr = srv.accept()
-        state["phone"] = addr[0]
+        state["phone"] = addr[0]; state["client_sock"] = c
         log(f"TCP: CQ MixPad connected from {addr}")
         d = socket.create_connection((DESK, 51326), timeout=5); d.settimeout(None); state["desk_sock"] = d
         log(f"TCP: connected to the desk {DESK}:51326")
@@ -150,6 +152,8 @@ def control():
                     conn["seen"] = True
                     first = state["mp_udp"] is None
                     state["mp_udp"] = p; log(f"MixPad's UDP port {p}")
+                    if SANDBOX:  # MixPad in the Mantra Sandbox emulator: forward the Mac's UDP port P into it
+                        os.system(f"sandbox redir udp {p} >/dev/null 2>&1"); log(f"sandbox: Mac udp {p} -> emulator")
                     if not first:
                         log("reconnect: the bridges stay, MixPad's new port is used"); return
                     if LOCAL:
@@ -175,9 +179,16 @@ def injector():
     while True:
         c, _ = srv.accept()
         for line in c.makefile():
-            data = bytes.fromhex(line.strip())
-            if data and state.get("desk_sock"):
+            line = line.strip(); to = "d"
+            if line[:2] in ("c ", "b "): to, line = line[0], line[2:]
+            data = bytes.fromhex(line)
+            if not data: continue
+            # "c <hex>": to MixPad only, as if the desk reported the change (MixPad shows the value: calibration,
+            # 8.11.2026); "b <hex>": to the desk and to MixPad; plain hex: to the desk only.
+            if to in "db" and state.get("desk_sock"):
                 state["desk_sock"].sendall(data); rec("tcp_inj.bin", data); log("INJECT " + data.hex(" "))
+            if to in "cb" and state.get("client_sock"):
+                state["client_sock"].sendall(data); rec("tcp_injc.bin", data); log("INJECT->MixPad " + data.hex(" "))
         c.close()
 
 

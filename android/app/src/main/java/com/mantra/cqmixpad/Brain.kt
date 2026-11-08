@@ -29,7 +29,10 @@ class Brain(private val store: Store) {
             "soft_key" -> "press soft key ${input.optInt("number")}"
             "remember" -> "remember: ${input.optString("note")}"
             "note_for_marko" -> "YOU: ${input.optString("text")}"
-            "set_eq" -> "${input.optString("channel")} EQ ${input.optString("band")} ${String.format(java.util.Locale.US, "%+.1f", input.optDouble("gain_db"))} dB"
+            "set_eq" -> "${input.optString("channel")} EQ ${input.optString("band")} ${String.format(java.util.Locale.US, "%+.1f", input.optDouble("gain_db"))} dB" +
+                (if (input.has("freq_hz")) " at ${input.optDouble("freq_hz").toInt()} Hz" else "") + (if (input.has("width_oct")) " width ${input.optDouble("width_oct")} oct" else "")
+            "set_comp" -> "${input.optString("channel")} comp" + listOf("threshold_db" to " %.1f dB", "ratio" to " %.1f:1", "gain_db" to " gain %+.1f", "attack_ms" to " att %.1f ms", "release_ms" to " rel %.0f ms")
+                .filter { input.has(it.first) }.joinToString("") { String.format(java.util.Locale.US, it.second, input.optDouble(it.first)) } + (if (input.has("on")) if (input.optBoolean("on")) " on" else " off" else "")
             "set_trim" -> "${input.optString("channel")} trim ${String.format(java.util.Locale.US, "%+.1f", input.optDouble("db"))} dB"
             "set_hpf" -> "${input.optString("channel")} HPF " + if (input.optBoolean("on", true)) "${input.optDouble("hz", 0.0).toInt()} Hz" else "off"
             else -> "$name $input"
@@ -57,6 +60,7 @@ class Brain(private val store: Store) {
                 "soft_key" -> "soft key ${input.optInt("number")} pressed"
                 "set_eq" -> "$who equaliser ${mapOf("LF" to "low", "LM" to "low mid", "HM" to "high mid", "HF" to "high")[input.optString("band")] ?: ""} at ${db(input.optDouble("gain_db"))}"
                 "set_trim" -> "$who trim at ${db(input.optDouble("db"))}"
+                "set_comp" -> "$who compressor set"
                 "set_hpf" -> if (input.optBoolean("on", true)) "$who high pass at ${input.optDouble("hz", 0.0).toInt()} hertz" else "$who high pass off"
                 else -> ""
             }
@@ -102,9 +106,13 @@ class Brain(private val store: Store) {
             tool("soft_key", "Press one of the CQ's soft keys (1..3).", listOf("number"), "number" to mapOf("type" to "integer")),
             tool("remember", "Keep a lesson about mixing Santoshi for the next concerts (one short sentence).", listOf("note"),
                 "note" to mapOf("type" to "string")),
-            tool("set_eq", "Set one band of an input's 4-band parametric EQ to an ABSOLUTE gain (to cut 3 dB more, take its value in INPUT SETTINGS NOW and subtract 3; its frequency stays as the desk has it): band LF (low, about 100 Hz), LM (low mid), HM (high mid), HF (high, about 3 kHz and up); gain_db -15..+15. Only Ip1..Ip10. Small moves: 1 to 3 dB.",
+            tool("set_eq", "Set one band of an input's 4-band parametric EQ to an ABSOLUTE gain (to cut 3 dB more, take its value in INPUT SETTINGS NOW and subtract 3): band LF (low), LM (low mid), HM (high mid), HF (high); gain_db -15..+15. Optional freq_hz (20..20000) moves the band, optional width_oct (0.11..1.5 octaves, bell bands) sets its width; leave them out to keep the desk's. Only Ip1..Ip10. Small moves: 1 to 3 dB.",
                 listOf("channel", "band", "gain_db"), "channel" to ch, "band" to mapOf("type" to "string", "enum" to listOf("LF", "LM", "HM", "HF")),
-                "gain_db" to mapOf("type" to "number")),
+                "gain_db" to mapOf("type" to "number"), "freq_hz" to mapOf("type" to "number"), "width_oct" to mapOf("type" to "number")),
+            tool("set_comp", "An input's compressor, ABSOLUTE values (present ones in INPUT SETTINGS NOW): on, threshold_db (-46..+18), ratio (1..20, or 40/inf), gain_db (make-up 0..18), attack_ms (0.3..300), release_ms (50..2000). Leave out what stays. Voices about 3:1, -10 dB, 10 ms / 150 ms.",
+                listOf("channel"), "channel" to ch, "on" to mapOf("type" to "boolean"), "threshold_db" to mapOf("type" to "number"),
+                "ratio" to mapOf("type" to "number"), "gain_db" to mapOf("type" to "number"), "attack_ms" to mapOf("type" to "number"),
+                "release_ms" to mapOf("type" to "number")),
             tool("set_trim", "Set an input's trim (digital gain after the preamp, -24..+24 dB, ABSOLUTE; its present value is in INPUT SETTINGS NOW). Gain staging: an input whose measured peaks pass about +12 is too hot: lower its trim and raise its fader by the same dB, the mix stays the same.",
                 listOf("channel", "db"), "channel" to ch, "db" to mapOf("type" to "number")),
             tool("set_hpf", "An input's high-pass filter (low cut): on/off and its frequency in Hz (20..400). Voices about 100-150 Hz, guitars about 80-120 Hz.",
@@ -127,8 +135,8 @@ How you act:
 - You control the desk only through the tools. Channels are the CQ's names (Ip1..Ip10, ST1, USB, BT, FX1, FX2 returns). "channel one" means Ip1.
 - When Marko says who is on a channel ("backing vocal Diana on channel 4"), call set_label with name "Diana" (only the person goes on the channel) and role "backing vocal" (the function, which decides how you mix it: lead vocals in the first plan, backing vocals under them, instruments behind the voices). Give it a sensible starting level and pan if Marko is setting up, and use note_for_marko for the Library preset to load in MixPad.
 - The RTA is the mixer's own analyser of the Main LR mix (31 bands summed into octaves, about 2 s averaged); the Krishna Das target was measured through the same analyser, so they compare directly. If the level is below -80 dB there is no music to judge: say so and change nothing.
-- The tonal target is the Krishna Das references (the profile in the RTA lines). Compare the RTA with it and fit the mix to it, keeping the vocals in the first plan. You can move faders, sends, mutes and pans, each input's EQ band gains (set_eq) and its high-pass filter (set_hpf). Compressor, gate, gain and Library presets you still give to Marko with note_for_marko. Fix the balance between players with faders first, the tone with EQ second, small moves of 1 to 3 dB.
-- INPUT SETTINGS NOW lists each input's trim, high-pass and EQ band gains as the desk holds them: set_eq and set_hpf set absolute values, so start from these.
+- The tonal target is the Krishna Das references (the profile in the RTA lines). Compare the RTA with it and fit the mix to it, keeping the vocals in the first plan. You can move faders, sends, mutes and pans, each input's EQ bands (set_eq: gain, and frequency/width when needed), its high-pass filter (set_hpf) and its compressor (set_comp). Gate, analogue gain and Library presets you still give to Marko with note_for_marko. Fix the balance between players with faders first, the tone with EQ second, small moves of 1 to 3 dB.
+- INPUT SETTINGS NOW lists each input's trim, high-pass, EQ bands (gain @ frequency) and compressor as the desk holds them: set_eq, set_hpf and set_comp set absolute values, so start from these.
 - The desk's meter scale: 0 = nominal, about -18 dBFS; +12 is about -6 dBFS; the desk clips near +18. A Main peak of +0.6 is quiet (about -17 dBFS), not near clipping.
 - MEASURED LEVELS give each live input's real level; its level in the mix is that plus its MAIN fader. Use them to set the balance (do not guess from fader positions alone).
 - Santoshi's order of importance: the vocals first; in a call-and-response song the answering voices are as loud as the leading one. Then Igor's guitar, then Snoopy's guitar.
