@@ -171,6 +171,15 @@ class MainActivity : ComponentActivity() {
                 while (meterHistory.size > 8) meterHistory.removeFirst()
             }
         }
+        lifecycleScope.launch {          // the desk's meters for Sonnet: 4 a second, 10 s
+            while (true) {
+                kotlinx.coroutines.delay(250)
+                if (recorder.metersAlive()) {
+                    val i = recorder.inMeters.value; val o = recorder.outMeters.value
+                    levelHist.addLast(i.copyOf(16) + floatArrayOf(o[6], o[7])); while (levelHist.size > 40) levelHist.removeFirst()
+                }
+            }
+        }
         lifecycleScope.launch { recordingWatch() }
         // learning MixPad's registration: files/proxy.flag starts the proxy (the meter session pauses meanwhile)
         val proxy = Proxy({ link.host.value }, filesDir, lifecycleScope) { log.add(0, it) }
@@ -230,6 +239,25 @@ class MainActivity : ComponentActivity() {
 
     // ---------- the desk as text, for Sonnet ----------
 
+    /** The last 10 s of the desk's meters, 4 a second: inputs Ip1..Ip16 and Main L/R. */
+    private val levelHist = ArrayDeque<FloatArray>()
+    private fun levelsText(): String? {
+        if (!recorder.metersAlive() || levelHist.size < 8) return null
+        val labels = store.labels.value
+        val n = levelHist.first().size
+        fun avg(k: Int) = 10 * kotlin.math.log10(levelHist.map { Math.pow(10.0, it[k] / 10.0) }.average() + 1e-12)
+        fun peak(k: Int) = levelHist.maxOf { it[k] }.toDouble()
+        return buildString {
+            append("MEASURED LEVELS, last ${levelHist.size / 4} s (desk meters, dB, 0 = nominal about -18 dBFS; post-preamp, before the fader; -110 = silent):\n")
+            for (k in 0 until minOf(16, n - 2)) if (peak(k) > -100) {
+                val id = "Ip${k + 1}"; val l = labels[id]
+                append(String.format(Locale.US, "%s%s: average %.1f, peak %.1f\n", id, l?.let { " [${it.name}]" } ?: "", avg(k), peak(k)))
+            }
+            append(String.format(Locale.US, "MAIN L/R (after faders): average %.1f / %.1f, peak %.1f / %.1f\n", avg(n - 2), avg(n - 1), peak(n - 2), peak(n - 1)))
+            append("A channel's level in the mix = its measured average + its MAIN fader dB. Silent channels are not listed.\n")
+        }
+    }
+
     private fun deskText(): String = buildString {
         val labels = store.labels.value
         for (s in link.present.value) {
@@ -244,6 +272,8 @@ class MainActivity : ComponentActivity() {
         append("MASTERS: ").append(Cq.MIXES.take(9).mapNotNull { m -> Cq.masterParam(m)?.let { p -> link.values[p]?.let { "$m ${Cq.dbText(Cq.valueToDb(it))}" } } }.joinToString(", ")).append('\n')
         Cq.masterMuteParam("MAIN")?.let { append("MAIN master ").append(if (link.muted(it)) "MUTED" else "on").append('\n') }
         for (d in 1..4) link.values[Cq.dcaLevelParam(d)]?.let { append("DCA$d ${Cq.dbText(Cq.valueToDb(it))}${if (link.muted(Cq.dcaMuteParam(d))) " MUTED" else ""}\n") }
+        // the desk's measured levels (8.11.2026): what each player really delivers, so the balance can be judged
+        levelsText()?.let { append(it) }
         if (METERS_DECODED && meters.alive.value) {
             val inp = meters.inputs.value; val o = meters.outputs.value
             append("LIVE METERS (dBFS, the desk's own): ")
@@ -929,7 +959,7 @@ class MainActivity : ComponentActivity() {
         val src by recorder.rtaSource.collectAsState()
         val onMain = src == 0x38
         val labelsNow by store.labels.collectAsState()
-        Row(Modifier.fillMaxWidth().height(132.dp).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().height(176.dp).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Canvas(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(6.dp)).background(Panel)) {
                 val n = 10; val w = size.width / n
                 fun y(db: Double) = (size.height * (-db / 50.0)).toFloat().coerceIn(0f, size.height)
@@ -941,7 +971,7 @@ class MainActivity : ComponentActivity() {
                     if (onMain) { val k = y(Rta.KD[i]); drawRect(Amber, Offset(i * w + 2f, k - 2f), Size(w - 4f, 4f)) }
                 }
             }
-            Column(Modifier.padding(start = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(Modifier.padding(start = 6.dp).fillMaxHeight().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
                 Chip(if (on) "RTA ON" else "RTA", if (on) Cyan else Grey, filled = on) { toggleRta() }
                 Chip(if (fbGuard) "FB GUARD ON" else "FB GUARD OFF", if (fbGuard) Red else Grey, filled = fbGuard) {
                     fbGuard = !fbGuard; feedback.reset()
