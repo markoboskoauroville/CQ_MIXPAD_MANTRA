@@ -6,3 +6,4 @@ build/
 local.properties
 secrets/
 captures/
+__pycache__/

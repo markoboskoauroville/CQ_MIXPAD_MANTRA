@@ -122,3 +122,14 @@
 "You need to pick 15 minutes from the whole concert. You play the sound, and you can see which signals are there, which mics are active, and then use them to mix and print the mix on my USB stick plugged into the mixer. Then I will listen to it. Are you good with the mixer or not?"
 "As you know, vocal is most important, then Igor guitar, then Snoopy guitar, and back vocals need to be the same loudness as main vocals, since it's a call-and-response exercise."
 "In that case, you need to drag the mix with an Android application. Pixel phone sale." (read as: do the mix with our Android app on the Pixel)
+"At the same time, take the screenshot of the user interface and see how it looks. Is everything okay? You can also test Sonnet. You can give it some type of commands in the prompt and see how it reacts. Does it understand the command?"
+"Igor Mik died during the concert, and then he was shifting to Yadranka Mike." (Igor's mic, Ip1, went silent at ~16 min of CQ-MT006; from then on Igor sang into Jadranka's mic, Ip2 jadran)
+"Please look at our meters at the top user interface. I think this is some kind of spectral meter. It's just randomly vibrating. Use a meter." / "No, I want metering bridge."
+"Yes, you're right. One meter per each channel." / "Can be positioned to save user interface inside Fader groove"
+"At the top, the whole mix should be displayed. This is master RTA."
+"On which I can push any of the channels and look at them." (the top RTA: Main LR by default, tap any channel to see its own spectrum)
+"From DaVinci Resolve, you can take the screenshot from the concert in Embassy and see how we look and how many of us are there."
+"And when we are on the subject of the concert, you can also update the website because this concert is gone. Put the new one at the top and take a few screenshots from the video as re aport from the concert."
+"At the top of the user interface, there are different tabs which are showing different output, etc. But what is missing is the custom tab, when I can simply customize it, same as in Mixer. I can choose which features are displayed on that custom tab and in which order they are."
+"Also, in the main interface, I can take any fader, long press it, and drop it on a different location. The ones that are dropped to different locations will end up at the bottom. There will be one orange underline telling me that this fader has moved from its original place."
+(8.11.2026 18:30) Krishna Das measured through the desk's own Main LR RTA (USB in, SD stopped): octave share 31..16k = -29.0 -13.8 -6.6 -7.5 -6.4 -6.3 -11.8 -15.7 -21.4 -30.8 (tools/kd_desk.json). Per-channel RTA works: F7 2F 2F 0F 00 <CH> 01 00.
