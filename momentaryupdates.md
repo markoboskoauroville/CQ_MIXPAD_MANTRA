@@ -136,3 +136,5 @@
 "I am going to sleep so don't count on the other for any of my interactions. You need to continue by yourself as much as possible. please finish as much as possible without waiting for any of my confirmation if something needs to be pressed, feel free to press it using macro recorder"
 "Basically I'm asking you to do whatever you can do without human interaction. Make this application enterprise grade and that every detail works as a professional mix mixing to special user interface needs to be adapted to the fat finger"
 "User interface must enable for each fader to quickly enter its input settings and adjust the gain for the input. When people are sometimes over excited, we need to adjust gain later during the song playing"
+"It is difficult to work with small buttons, please. Large buttons and then make user interface scrollable in all directions."
+"and also user interface should be resizable by pinching" / "three fingers to scroll the interface, pinch to resize the interface" / "one finger to operate user interface"

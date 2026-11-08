@@ -17,6 +17,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.layout
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
@@ -90,7 +97,7 @@ private const val METERS_DECODED = false
 private const val RTA_DECODED = true   // the desk's RTA, decoded 7.11.2026 (Recorder.rta)
 private val RecRed = Color(0xFFEF4444)    // TTT's recording red
 /** Strip width: wide enough for a thumb (Marko, 8.11.2026: "adapted to the fat finger"). */
-private val STRIP_W = 80.dp
+private val STRIP_W = 92.dp
 
 class MainActivity : ComponentActivity() {
     private lateinit var link: Link
@@ -198,7 +205,7 @@ class MainActivity : ComponentActivity() {
                 meters.raw8?.let { if (f8.length() > 640L * 240) f8.writeBytes(ByteArray(0)); f8.appendBytes(it) }
             }
         }
-        setContent { Screen() }
+        setContent { ZoomPan { Screen() } }
     }
 
     override fun onResume() {
@@ -735,6 +742,52 @@ class MainActivity : ComponentActivity() {
     // ---------- the screen ----------
 
     @Composable
+    private fun ZoomPan(content: @Composable () -> Unit) {
+        // Marko, 8.11.2026: "three fingers to scroll the interface, pinch to resize the interface, one finger to operate".
+        // Two fingers pinch the scale (0.6x .. 2.5x, remembered); three fingers move the view in every direction; one finger
+        // goes on to the controls untouched. Zoomed out, the screen lays out more room; zoomed in, the same layout grows.
+        val prefs = remember { getSharedPreferences("view", MODE_PRIVATE) }
+        var scale by remember { mutableStateOf(prefs.getFloat("uiScale", 1f)) }
+        var pan by remember { mutableStateOf(Offset.Zero) }
+        var box by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+        fun clampPan(p: Offset, sc: Float): Offset {
+            val ls = minOf(sc, 1f); val vw = box.width / ls * sc; val vh = box.height / ls * sc
+            return Offset(p.x.coerceIn(minOf(0f, box.width - vw), 0f), p.y.coerceIn(minOf(0f, box.height - vh), 0f))
+        }
+        Box(Modifier.fillMaxSize().background(Bg).clipToBounds().onSizeChanged { box = it }.pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                do {
+                    val ev = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    val n = ev.changes.count { it.pressed }
+                    if (n >= 2) {
+                        if (n == 2) scale = (scale * ev.calculateZoom()).coerceIn(0.6f, 2.5f)
+                        else pan = clampPan(pan + ev.calculatePan(), scale)
+                        pan = clampPan(pan, scale)
+                        ev.changes.forEach { it.consume() }
+                    }
+                } while (ev.changes.any { it.pressed })
+                prefs.edit().putFloat("uiScale", scale).apply()
+            }
+        }) {
+            val sc = scale; val pn = pan
+            Box(Modifier.layout { m, c ->
+                val ls = minOf(sc, 1f)
+                val w = (c.maxWidth / ls).toInt(); val h = (c.maxHeight / ls).toInt()
+                val pl = m.measure(androidx.compose.ui.unit.Constraints.fixed(w, h))
+                layout(c.maxWidth, c.maxHeight) {
+                    pl.placeWithLayer(0, 0) {
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                        scaleX = sc; scaleY = sc; translationX = pn.x; translationY = pn.y
+                    }
+                }
+            }) { content() }
+            if (sc != 1f) Text(String.format(Locale.US, "%.0f%%  (pinch · 3 fingers move)", sc * 100), color = Grey, fontSize = 10.sp,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp))
+        }
+    }
+
+    @Composable
     private fun Screen() {
         val tick by link.tick.collectAsState()
         val status by link.status.collectAsState()
@@ -1009,8 +1062,8 @@ class MainActivity : ComponentActivity() {
 private fun Chip(label: String, color: Color, filled: Boolean = false, onClick: () -> Unit) {
     Box(Modifier.padding(3.dp).clip(RoundedCornerShape(6.dp))
         .background(if (filled) color.copy(alpha = 0.25f) else Color.Transparent)
-        .border(1.dp, color, RoundedCornerShape(6.dp)).clickable { onClick() }.heightIn(min = 44.dp).padding(horizontal = 12.dp, vertical = 11.dp)) {
-        Text(label, color = color, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        .border(1.dp, color, RoundedCornerShape(6.dp)).clickable { onClick() }.heightIn(min = 52.dp).padding(horizontal = 14.dp, vertical = 14.dp)) {
+        Text(label, color = color, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
@@ -1034,13 +1087,13 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
             Text(sub, color = Grey, fontSize = 9.sp, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
         }
         Box(Modifier.padding(vertical = 3.dp).fillMaxWidth().clip(RoundedCornerShape(5.dp))
-            .background(if (muted) Red else Color(0xFF2A2A2E)).clickable { onMute() }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
-            Text("MUTE", color = if (muted) Color.White else Grey, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            .background(if (muted) Red else Color(0xFF2A2A2E)).clickable { onMute() }.padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+            Text("MUTE", color = if (muted) Color.White else Grey, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         }
         // the input's settings in one tap (Marko, 8.11.2026: "quickly enter its input settings and adjust the gain")
         if (onInput != null) Box(Modifier.padding(bottom = 3.dp).fillMaxWidth().clip(RoundedCornerShape(5.dp)).border(1.dp, Cyan, RoundedCornerShape(5.dp))
-            .clickable { onInput() }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text("IN", color = Cyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            .clickable { onInput() }.padding(vertical = 15.dp), contentAlignment = Alignment.Center) {
+            Text("IN", color = Cyan, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         }
         if (pan != null) {
             Canvas(Modifier.fillMaxWidth().height(30.dp).pointerInput(Unit) {
