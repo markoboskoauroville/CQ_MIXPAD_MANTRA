@@ -110,3 +110,7 @@
 "Please forget mixing with the desk audio, export video which is open on the timeline and put it in this. YouTube channel that's allRight few data of the concept, everything we know about this concept."
 "Please test the Internet speed and let me know once this video is on the disc, how much time you will need to upload it to YouTube."
 "Once file is ready. You need to close this project, we are going to sleep. And uh we upload tomorrow. When I ask you to upload a latest Santoshi concert, you will know what to do."
+
+## 8.11.2026, ~16:30 (Mac session, the full protocol tour)
+"let's continue working on my app to control CQ Mixer, my private app. We started to sniff the traffic between my Mixer and the original Mixpad app. Please let me know if everything is sniffed. Do we have the whole protocol reverse-engineered"
+"the mixer is on the Wi-Fi network. For testing, the Pixel 7 is on the cable and also on the Wi-Fi network. CQ Mixpad is on Mac. CQ Mixpad is on the Pixel 7. Mixpad is on Inside. That's the last concept, the full one-hour session with all the tracks, so you have something to play back, like a virtual sound check. Let's do this. Everything is ready. Only your intelligence is missing, Baba"
