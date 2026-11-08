@@ -590,7 +590,10 @@ class MainActivity : ComponentActivity() {
             if (usbSince > 0) Text("● RECORDING TO USB  " + hms((now - usbSince) / 1000), color = RecRed, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             else if (usbTake.isNotBlank()) Text("last stick take: $usbTake", color = Grey, fontSize = 13.sp)
             Row {
-                Chip("● REC TO USB", RecRed, filled = true) { recorder.usbRec(); log.add(0, "  USB stick: recording") }
+                Chip("● REC TO USB", RecRed, filled = true) {
+                    if (sdPlayingFlag) { say("The USB stick cannot record while the SD card plays: the desk ignores it. Stop the player first, or print through the computer's USB audio."); log.add(0, "  ✗ USB stick: not while the SD plays") }
+                    else { recorder.usbRec(); log.add(0, "  USB stick: recording") }
+                }
                 Chip("■ STOP USB", Grey) { recorder.usbStop(); log.add(0, "  USB stick: stopped") }
             }
             val start = concertStart()
