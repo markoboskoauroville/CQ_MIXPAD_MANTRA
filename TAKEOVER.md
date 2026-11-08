@@ -1,5 +1,40 @@
 # TAKEOVER: CQ MixPad (Mantra)
 
+**State 8.11.2026, night: v35, GitHub build green, installed on the Pixel 7. Repo public since 8.11.2026.**
+
+## Where we stopped (8.11.2026)
+- **Protocol tour done** (PROTOCOL.md "The full tour", and the public database repo cq_mixpad_protocol): tools/cq_mitm.py,
+  cq_tour.py, cq_dump.py, cq_inject.sh, cq_live.py, cq_ctl.py, cq_scan.py. Every test ends with a cq_dump diff of zero.
+- **App v28 to v35:** metering bridge in the fader grooves; master RTA on top, a channel's own RTA on tap; CUSTOM tab;
+  long-press drag moves a fader (orange underline); IN panel with gain, trim, HPF and the 4 EQ bands read from the desk's
+  state dump; pinch zoom and three-finger pan; big buttons; SD player and USB stick buttons (REC TO USB says why it cannot
+  while the SD plays); Sonnet tools set_eq / set_hpf / set_trim (absolute values) with measured levels; test channel
+  `run-as com.mantra.cqmixpad` files/command.txt in, files/answer.txt out.
+- **Embassy 15-minute RTA mix** (minute 30 to 45 of CQ-MT006) printed to
+  ~/Music/SantoshiKoncert/Embassy/"Embassy 7.11.2026 - RTA mix 30-45 min.wav" through the desk's USB audio
+  (tools/print_embassy.sh), because the desk ignores USB-stick REC while the SD card plays.
+- **The desk is left as mixed:** Ip1 muted, Jadranka trim -6, Main +5.8, EQ changes on the four channels. Scene 1
+  "Santoshi Mix" is untouched: recall it to go back.
+- The Swift Mac copy is in ~/Developer/CQ_MIXPAD_MAC, local only (no GitHub repo until Marko says yes).
+
+## Pending for next time
+1. **Calibration:** PEQ frequency, gate and comp times, ratio and width: only two points known for each. The HPF checks
+   out at three points.
+2. **Untoured parts:** Main LR EQ and comp, Out1-6 PEQ, Ip2-10 processing, ST IN / USB / BT, FX inner tabs, meters type 9
+   and 24.
+3. **Swift repo CQ_MIXPAD_MAC:** waits for Marko's yes (creating it unattended was blocked).
+4. **Ip1-10 back to Analogue** on the desk before real mics (they are on the SD/USB source for playback).
+5. Jadranka's (Ip2) Quick label says "Vocal Low" (was "Vocal High"; cosmetic, all sound values restored).
+6. **Never toggle Stereo Link in a test:** it copies the odd channel onto the even one and unlinking does not undo it.
+7. **One private-protocol client at a time:** CQ MixPad, our app, cq_mitm or a cq_*.py tool, never two together.
+
+Note: commit bb6b0dd (print_embassy.sh check, cq_ctl next/prev, 8.11.2026) was pushed without the Co-Authored-By /
+Claude-Session lines; it was written in session_01NceKU8PKmedvkKm89PySPN by Claude Opus 5.5.
+
+---
+
+## Earlier state
+
 **State 7.11.2026, 14:50 — v27, before the Indian Embassy concert.**
 
 ## What works (tested on the real CQ-12T, over the cable and over Wi-Fi at 192.168.1.102)
