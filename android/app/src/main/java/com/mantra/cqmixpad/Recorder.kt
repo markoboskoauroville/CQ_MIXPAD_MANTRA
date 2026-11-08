@@ -75,7 +75,7 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
         val udpJob = scope.launch(Dispatchers.IO) { meterLoop(udp, ip) }
         out = o; connected.value = true; refused.value = 0
         val dump = scope.launch(Dispatchers.IO) {     // ask for the full data (armed tracks) now and every minute
-            while (isActive) { delay(1500); try { synchronized(this@Recorder) { o.write(f(3)); o.flush() } } catch (_: Exception) { break }; delay(58_500) }
+            while (isActive) { delay(1500); try { synchronized(this@Recorder) { o.write(f(3)); o.flush() } } catch (_: Exception) { break }; delay(28_500) }
         }
         log("  recorder: connected")
         val beat = scope.launch(Dispatchers.IO) {
@@ -96,7 +96,10 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
                     if (type == 7) onMessage(d)
                     // the full data dump: the armed tracks are a 16-bit mask 100 bytes from its end (measured 7.11.2026:
                     // ff 03 = tracks 1-10, ff 07 = 1-11)
-                    if (type == 4 && len > 200) armed.value = (d[len - 100].toInt() and 0xFF) or ((d[len - 99].toInt() and 0xFF) shl 8)
+                    if (type == 4 && len > 200) {
+                        armed.value = (d[len - 100].toInt() and 0xFF) or ((d[len - 99].toInt() and 0xFF) shl 8)
+                        if (len > 32000) state0.value = d          // the whole desk state: input settings read from here
+                    }
                 } else if (b0 == 0xF7) {
                     // fixed 8-byte messages (as measured on the CQ-12T, 7.11.2026)
                     val d = ByteArray(7); readFully(r, d)
@@ -215,17 +218,37 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
         param.toByte(), ch.toByte(), sub.toByte(), (v and 0xFF).toByte(), ((v shr 8) and 0xFF).toByte())
     private fun dbRaw(db: Double) = (0x8000 + Math.round(db.coerceIn(-100.0, 100.0) * 256)).toInt().coerceIn(0, 0xFFFF)
 
+    /** The desk's full state (the 7F 04 dump, 42 824 bytes on the CQ-12T), asked at connect and every minute; the
+     *  desk never echoes a change, so every write here also patches this copy. Offsets measured 8.11.2026 by dump diffs
+     *  (cq_mixpad_protocol): per input k (Ip1 = 0), 280 bytes apart: HPF freq 484, HPF in 486, PEQ gain 520 + 6*band,
+     *  trim 656; analogue gain at 31248 + 4k. */
+    val state0 = MutableStateFlow<ByteArray?>(null)
+    private fun word(off: Int): Int? = state0.value?.let { d -> if (off + 1 < d.size) (d[off].toInt() and 0xFF) or ((d[off + 1].toInt() and 0xFF) shl 8) else null }
+    private fun patch(off: Int, v: Int) { val d = state0.value ?: return; if (off + 1 >= d.size) return
+        val c = d.copyOf(); c[off] = (v and 0xFF).toByte(); c[off + 1] = ((v shr 8) and 0xFF).toByte(); state0.value = c }
+    private fun dbOf(off: Int) = word(off)?.let { (it - 0x8000) / 256.0 }
+    fun hpfHzNow(ch: Int) = word(484 + 280 * ch)?.let { 82.5 * Math.pow(10.0, (it - 0x4E9B) / 15316.0) }
+    fun hpfOnNow(ch: Int) = word(486 + 280 * ch)?.let { (it and 0xFF) == 1 }
+    fun peqNow(ch: Int, band: Int) = dbOf(520 + 280 * ch + 6 * band)
+    fun trimNow(ch: Int) = dbOf(656 + 280 * ch)
+    fun gainNow(ch: Int) = dbOf(31248 + 4 * ch)
+    fun askState(): Boolean = send(f(3))
+
+    /** Input gain (analogue preamp, block 0A param 0C sub 01) and trim (block 0A param 0F), dB. */
+    fun gain(ch: Int, db: Double): Boolean { val v = dbRaw(db.coerceIn(0.0, 60.0)); patch(31248 + 4 * ch, v); return send(m(0x0A, 0x0C, ch, 1, v)) }
+    fun trim(ch: Int, db: Double): Boolean { val v = dbRaw(db.coerceIn(-24.0, 24.0)); patch(656 + 280 * ch, v); return send(m(0x0A, 0x0F, ch, 0, v)) }
+
     /** The RTA's source: 0x38 = Main LR, 0..9 = Ip1..Ip10 (verified: each channel shows its own spectrum). */
     val rtaSource = MutableStateFlow(0x38)
     fun setRtaSource(ch: Int): Boolean { rtaSource.value = ch; return send(m(0x2F, 0x0F, 0, ch, 1)) }
 
     /** PEQ band gain (band 0 LF, 1 LM, 2 HM, 3 HF) on Ip channel 0..9, dB. */
-    fun peqGain(ch: Int, band: Int, db: Double): Boolean = send(m(0x0F, 0x0C, ch, band, dbRaw(db.coerceIn(-15.0, 15.0))))
+    fun peqGain(ch: Int, band: Int, db: Double): Boolean { val v = dbRaw(db.coerceIn(-15.0, 15.0)); patch(520 + 280 * ch + 6 * band, v); return send(m(0x0F, 0x0C, ch, band, v)) }
     fun peqIn(ch: Int, on: Boolean): Boolean = send(m(0x0F, 0x10, ch, 0, if (on) 1 else 0))
     /** HPF on/off and frequency (Hz = 82.5 * 10^((raw - 0x4E9B)/15316), two measured points; kept to 20..400 Hz). */
-    fun hpf(ch: Int, on: Boolean): Boolean = send(m(0x0C, 0x0C, ch, 0, if (on) 1 else 0))
-    fun hpfHz(ch: Int, hz: Double): Boolean =
-        send(m(0x0C, 0x0D, ch, 0, (0x4E9B + 15316 * Math.log10(hz.coerceIn(20.0, 400.0) / 82.5)).toInt().coerceIn(0, 0xFFFF)))
+    fun hpf(ch: Int, on: Boolean): Boolean { word(486 + 280 * ch)?.let { patch(486 + 280 * ch, (it and 0xFF00) or (if (on) 1 else 0)) }; return send(m(0x0C, 0x0C, ch, 0, if (on) 1 else 0)) }
+    fun hpfHz(ch: Int, hz: Double): Boolean { val v = (0x4E9B + 15316 * Math.log10(hz.coerceIn(20.0, 400.0) / 82.5)).toInt().coerceIn(0, 0xFFFF)
+        patch(484 + 280 * ch, v); return send(m(0x0C, 0x0D, ch, 0, v)) }
 
     /** The SD player (block 11 param 10) and the USB stick's stereo recorder (param 0F). */
     private fun t(param: Int, op: Int) = byteArrayOf(0xF7.toByte(), 0x11, 0x11, param.toByte(), op.toByte(), 0xFF.toByte(), 0, 0, 0)

@@ -89,6 +89,8 @@ private const val METERS_DECODED = false
 /** The mixer's own RTA is not decoded (7.11.2026). Until it is, nothing is mixed automatically from the Krishna Das reference. */
 private const val RTA_DECODED = true   // the desk's RTA, decoded 7.11.2026 (Recorder.rta)
 private val RecRed = Color(0xFFEF4444)    // TTT's recording red
+/** Strip width: wide enough for a thumb (Marko, 8.11.2026: "adapted to the fat finger"). */
+private val STRIP_W = 80.dp
 
 class MainActivity : ComponentActivity() {
     private lateinit var link: Link
@@ -279,7 +281,9 @@ class MainActivity : ComponentActivity() {
                     else -> say("Nothing to change.")
                 }
             } catch (e: Exception) {
-                try { java.io.File(filesDir, "answer.txt").appendText("YOU: $text\nERROR: ${e.message}\n\n") } catch (_: Exception) {}
+                val chain = generateSequence(e as Throwable?) { it.cause }.take(6).joinToString(" <- ") { "${it.javaClass.simpleName}: ${it.message}" }
+                log.add(0, "  ✗ $chain")
+                try { java.io.File(filesDir, "answer.txt").appendText("YOU: $text\nERROR: $chain\n\n") } catch (_: Exception) {}
                 say("Sonnet did not answer: ${e.message?.take(140)}")
             } finally { busy = false }
         }
@@ -643,6 +647,58 @@ class MainActivity : ComponentActivity() {
     private fun sdPlaying() = System.currentTimeMillis() - sdPlayingAt < 6 * 3600_000L && sdPlayingFlag
     @Volatile private var sdPlayingFlag = false
 
+    // ---- the input panel: gain, trim, HPF, EQ of one input, big buttons, values read back from the desk's state
+    private var inputCh by mutableStateOf<Int?>(null)
+    private fun openInput(ch: Int) { inputCh = ch; recorder.askState(); showOnRta(ch) }
+    private fun closeInput() { inputCh = null; showOnRta(0x38) }
+
+    @Composable
+    private fun StepRow(title: String, value: String, steps: List<Pair<String, () -> Unit>>, extra: (@Composable () -> Unit)? = null) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(8.dp)).background(Panel).padding(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = Amber, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(value, color = Text1, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                extra?.invoke()
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                steps.forEach { (l, f) ->
+                    Box(Modifier.weight(1f).padding(3.dp).height(52.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF2A2A2E))
+                        .clickable { f() }, contentAlignment = Alignment.Center) { Text(l, color = Text1, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun InputPanel(modifier: Modifier, ch: Int) {
+        val st by recorder.state0.collectAsState()
+        val labels by store.labels.collectAsState()
+        val id = "Ip${ch + 1}"; val l = labels[id]
+        fun f1(d: Double?) = d?.let { String.format(Locale.US, "%+.1f dB", it) } ?: "…"
+        st.hashCode()
+        Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$id  " + (l?.let { "${it.name} · ${it.instrument}" } ?: ""), color = Text1, fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Chip("CLOSE", Green, filled = true) { closeInput() }
+            }
+            if (st == null) Text("Reading the desk's settings…", color = Amber, fontSize = 13.sp)
+            Text("The RTA above shows this input now. Values come from the desk (read every 30 s, and after each change here).", color = Grey, fontSize = 11.sp)
+            val g = recorder.gainNow(ch); val t = recorder.trimNow(ch)
+            StepRow("GAIN (analogue input)", g?.let { String.format(Locale.US, "%.1f dB", it) } ?: "…",
+                listOf(-3.0, -1.0, 1.0, 3.0).map { d -> (if (d > 0) "+${d.toInt()}" else "${d.toInt()}") to { recorder.gain(ch, (recorder.gainNow(ch) ?: 0.0) + d); log.add(0, "  $id gain ${d}"); Unit } })
+            StepRow("TRIM (SD / USB / digital)", f1(t),
+                listOf(-3.0, -1.0, 1.0, 3.0).map { d -> (if (d > 0) "+${d.toInt()}" else "${d.toInt()}") to { recorder.trim(ch, (recorder.trimNow(ch) ?: 0.0) + d); log.add(0, "  $id trim ${d}"); Unit } })
+            val on = recorder.hpfOnNow(ch); val hz = recorder.hpfHzNow(ch)
+            StepRow("HIGH-PASS (low cut)" + (if (on == true) "" else " · off"), hz?.let { String.format(Locale.US, "%.0f Hz", it) } ?: "…",
+                listOf("−" to { recorder.hpfHz(ch, (recorder.hpfHzNow(ch) ?: 100.0) / 1.12); Unit }, "+" to { recorder.hpfHz(ch, (recorder.hpfHzNow(ch) ?: 100.0) * 1.12); Unit },
+                    (if (on == true) "OFF" else "ON") to { recorder.hpf(ch, on != true); Unit }))
+            listOf("LF (low)", "LM (low mid)", "HM (high mid)", "HF (high)").forEachIndexed { b, n ->
+                StepRow("EQ $n", f1(recorder.peqNow(ch, b)),
+                    listOf(-2.0, -1.0, 1.0, 2.0).map { d -> (if (d > 0) "+${d.toInt()}" else "${d.toInt()}") to { recorder.peqGain(ch, b, (recorder.peqNow(ch, b) ?: 0.0) + d); recorder.peqIn(ch, true); Unit } })
+            }
+        }
+    }
+
     /** Show one channel (0..9) or Main LR (0x38) on the RTA at the top: the desk's own analyser of that source. */
     private fun showOnRta(ch: Int) { recorder.setRtaSource(ch); rta.restart() }
 
@@ -723,6 +779,7 @@ class MainActivity : ComponentActivity() {
             if (mix == "REC") RecordingPage(Modifier.weight(1f))
             else if (mix == "VIEW") ViewPage(Modifier.weight(1f), present)
             else if (mix == "CUSTOM" && customEdit) CustomEditPage(Modifier.weight(1f), present)
+            else if (inputCh != null) { RtaStrip(); InputPanel(Modifier.weight(1f), inputCh!!) }
             else {
             RtaStrip()
             // the faders. CUSTOM (Marko, 8.11.2026: "same as in Mixer"): the strips he chose, in his order, on the MAIN mix.
@@ -734,7 +791,7 @@ class MainActivity : ComponentActivity() {
             val outM by recorder.outMeters.collectAsState()
             val metersOn = recorder.metersAlive()
             val rtaSrc by recorder.rtaSource.collectAsState()
-            val stripPx = with(androidx.compose.ui.platform.LocalDensity.current) { 64.dp.toPx() }
+            val stripPx = with(androidx.compose.ui.platform.LocalDensity.current) { STRIP_W.toPx() }
             Row(Modifier.weight(1f).fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 4.dp)) {
                 if (mix == "CUSTOM") Column(Modifier.padding(4.dp)) { Chip("EDIT", Amber) { customEdit = true } }
                 for (s in shown) {
@@ -757,7 +814,8 @@ class MainActivity : ComponentActivity() {
                                 onDragEnd = { dropStrip(id, dragDx, stripPx, present); dragId = null; dragDx = 0f },
                                 onDragCancel = { dragId = null; dragDx = 0f }) { ch, amount -> ch.consume(); dragDx += amount.x }
                         },
-                        modifier = if (dragId == id) Modifier.graphicsLayer { translationX = dragDx; alpha = 0.85f } else Modifier)
+                        modifier = if (dragId == id) Modifier.graphicsLayer { translationX = dragDx; alpha = 0.85f } else Modifier,
+                        onInput = if (isIp) ({ openInput(s.code) }) else null)
                 }
                 Cq.masterParam(eff)?.let { p ->
                     val mp = Cq.masterMuteParam(eff)
@@ -951,8 +1009,8 @@ class MainActivity : ComponentActivity() {
 private fun Chip(label: String, color: Color, filled: Boolean = false, onClick: () -> Unit) {
     Box(Modifier.padding(3.dp).clip(RoundedCornerShape(6.dp))
         .background(if (filled) color.copy(alpha = 0.25f) else Color.Transparent)
-        .border(1.dp, color, RoundedCornerShape(6.dp)).clickable { onClick() }.padding(horizontal = 9.dp, vertical = 6.dp)) {
-        Text(label, color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        .border(1.dp, color, RoundedCornerShape(6.dp)).clickable { onClick() }.heightIn(min = 44.dp).padding(horizontal = 12.dp, vertical = 11.dp)) {
+        Text(label, color = color, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 
@@ -961,13 +1019,13 @@ private fun Chip(label: String, color: Color, filled: Boolean = false, onClick: 
 private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Double?, master: Boolean = false, meter: Float? = null,
                   onDb: (Double) -> Unit, onMute: () -> Unit, onPan: (Double) -> Unit,
                   meter2: Float? = null, moved: Boolean = false, selected: Boolean = false, onTitle: (() -> Unit)? = null,
-                  titleMod: Modifier = Modifier, modifier: Modifier = Modifier) {
+                  titleMod: Modifier = Modifier, modifier: Modifier = Modifier, onInput: (() -> Unit)? = null) {
     val maxV = Cq.dbToValue(Cq.MAX_DB).toFloat()
     val setDb by androidx.compose.runtime.rememberUpdatedState(onDb)
     val curDb by androidx.compose.runtime.rememberUpdatedState(db)
     val curPan by androidx.compose.runtime.rememberUpdatedState(pan ?: 0.0)
     val setPan by androidx.compose.runtime.rememberUpdatedState(onPan)
-    Column(modifier.width(64.dp).fillMaxHeight().padding(horizontal = 2.dp).clip(RoundedCornerShape(6.dp))
+    Column(modifier.width(STRIP_W).fillMaxHeight().padding(horizontal = 2.dp).clip(RoundedCornerShape(6.dp))
         .background(if (master) Color(0xFF1E1A12) else Panel).padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         // the name: a tap shows this channel on the RTA at the top, a long press picks the strip up to move it
         Column(titleMod.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(if (selected) Cyan.copy(alpha = 0.25f) else Color.Transparent)
@@ -976,11 +1034,16 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
             Text(sub, color = Grey, fontSize = 9.sp, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
         }
         Box(Modifier.padding(vertical = 3.dp).fillMaxWidth().clip(RoundedCornerShape(5.dp))
-            .background(if (muted) Red else Color(0xFF2A2A2E)).clickable { onMute() }.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
-            Text("MUTE", color = if (muted) Color.White else Grey, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            .background(if (muted) Red else Color(0xFF2A2A2E)).clickable { onMute() }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+            Text("MUTE", color = if (muted) Color.White else Grey, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        }
+        // the input's settings in one tap (Marko, 8.11.2026: "quickly enter its input settings and adjust the gain")
+        if (onInput != null) Box(Modifier.padding(bottom = 3.dp).fillMaxWidth().clip(RoundedCornerShape(5.dp)).border(1.dp, Cyan, RoundedCornerShape(5.dp))
+            .clickable { onInput() }.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+            Text("IN", color = Cyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
         if (pan != null) {
-            Canvas(Modifier.fillMaxWidth().height(22.dp).pointerInput(Unit) {
+            Canvas(Modifier.fillMaxWidth().height(30.dp).pointerInput(Unit) {
                 detectTapGestures(onDoubleTap = { setPan(0.0) })
             }.pointerInput(Unit) {
                 // relative: the knob moves only by the finger's travel, a touch never jumps it

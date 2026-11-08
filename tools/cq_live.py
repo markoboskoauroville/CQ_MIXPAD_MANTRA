@@ -18,10 +18,24 @@ class Live:
         threading.Thread(target=self._udp, daemon=True).start(); threading.Thread(target=self._beat, daemon=True).start()
         threading.Thread(target=self._drain, daemon=True).start(); time.sleep(1)
     def _drain(self):
-        self.s.settimeout(1)
+        self.s.settimeout(1); self.tcp = bytearray()
         while self.run:
-            try: self.s.recv(65536)
+            try:
+                d = self.s.recv(65536)
+                if d:
+                    with self.lock: self.tcp += d
             except Exception: pass
+    def dump(self, wait=3.0):
+        """The desk's full state (7F 04 <u32 len> ...), asked with 7F 03."""
+        with self.lock: self.tcp = bytearray()
+        self.s.sendall(F(3)); time.sleep(wait)
+        with self.lock: b = bytes(self.tcp)
+        i = b.find(b"\x7f\x04")
+        while i >= 0:
+            n = struct.unpack("<I", b[i + 2:i + 6])[0]
+            if 1000 < n < 200000 and i + 6 + n <= len(b): return b[i + 6:i + 6 + n]
+            i = b.find(b"\x7f\x04", i + 2)
+        return None
     def _beat(self):
         while self.run:
             try: self.s.sendall(self.hello); self.u.sendto(F(5), (self.ip, 51324))
