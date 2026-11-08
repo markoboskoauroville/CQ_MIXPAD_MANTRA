@@ -172,7 +172,19 @@ class MainActivity : ComponentActivity() {
                 if (flag.exists()) { val s = flag.readText().trim().toIntOrNull() ?: 180; flag.delete(); meters.pause(s + 5); proxy.start(s) }
             }
         }
-        rta.onSpectrum = { spec -> if (fbGuard) feedback.onSpectrum(spec)?.let { e -> runOnUiThread { onFeedback(e) } } }
+        // a text channel for tests and helpers (8.11.2026): files/command.txt (adb run-as) is carried out as a typed
+        // command (a first word MATCH: asks with the RTA, suggestions wait for APPLY); every answer goes to files/answer.txt
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val f = java.io.File(filesDir, "command.txt")
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                if (f.exists()) { val t = f.readText().trim(); f.delete(); if (t.isNotBlank()) runOnUiThread {
+                    if (t.startsWith("MATCH:")) command(t.removePrefix("MATCH:").trim(), fromVoice = false, withRta = true) else command(t, fromVoice = false) } }
+            }
+        }
+        // the feedback guard listens to the phone in the room; it stays quiet while the desk plays from the SD card
+        // (8.11.2026: a sustained note of the playback read as feedback at 199 Hz)
+        rta.onSpectrum = { spec -> if (fbGuard && !sdPlaying()) feedback.onSpectrum(spec)?.let { e -> runOnUiThread { onFeedback(e) } } }
         // the RTA candidate (type 23) saved every 2 s for decoding: files/rta23.bin, 760-byte records
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val f = java.io.File(filesDir, "rta23.bin"); val f8 = java.io.File(filesDir, "m8.bin")
@@ -246,6 +258,7 @@ class MainActivity : ComponentActivity() {
                 val t0 = System.currentTimeMillis()
                 val a = brain.ask(text, deskText(), rtaText, link.present.value.map { it.id }, effortHigh = withRta)
                 log.add(0, String.format(Locale.US, "  (Sonnet %.1f s)", (System.currentTimeMillis() - t0) / 1000.0))
+                try { java.io.File(filesDir, "answer.txt").appendText("YOU: $text\nSONNET: ${a.say}\nACTIONS: ${a.actions.joinToString(" | ") { it.text() }}\n\n") } catch (_: Exception) {}
                 if (withRta) { pending.clear(); pending.addAll(a.actions.filter { it.name !in setOf("remember", "note_for_marko", "set_label") }) }
                 for (act in a.actions) {
                     if (!withRta || act.name in setOf("remember", "note_for_marko", "set_label")) apply(act)
@@ -266,6 +279,7 @@ class MainActivity : ComponentActivity() {
                     else -> say("Nothing to change.")
                 }
             } catch (e: Exception) {
+                try { java.io.File(filesDir, "answer.txt").appendText("YOU: $text\nERROR: ${e.message}\n\n") } catch (_: Exception) {}
                 say("Sonnet did not answer: ${e.message?.take(140)}")
             } finally { busy = false }
         }
@@ -501,8 +515,8 @@ class MainActivity : ComponentActivity() {
             // the SD player (a virtual soundcheck from the card) and the USB stick's stereo recorder (Main LR), 8.11.2026
             Text("SD PLAYER (the selected take)", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
             Row(Modifier.horizontalScroll(rememberScrollState())) {
-                Chip("⏮ PREV", Grey) { recorder.sdPrev() }; Chip("▶ ❚❚", Green, filled = true) { recorder.sdPlayPause() }
-                Chip("■ STOP", Grey) { recorder.sdStop() }; Chip("NEXT ⏭", Grey) { recorder.sdNext() }
+                Chip("⏮ PREV", Grey) { recorder.sdPrev() }; Chip("▶ ❚❚", Green, filled = true) { recorder.sdPlayPause(); sdPlayingFlag = !sdPlayingFlag; sdPlayingAt = System.currentTimeMillis() }
+                Chip("■ STOP", Grey) { recorder.sdStop(); sdPlayingFlag = false }; Chip("NEXT ⏭", Grey) { recorder.sdNext() }
             }
             var goTo by remember { mutableStateOf("") }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -623,6 +637,11 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    /** The desk plays from the SD card (pressed in this app, or seen by its state code). */
+    @Volatile private var sdPlayingAt = 0L
+    private fun sdPlaying() = System.currentTimeMillis() - sdPlayingAt < 6 * 3600_000L && sdPlayingFlag
+    @Volatile private var sdPlayingFlag = false
 
     /** Show one channel (0..9) or Main LR (0x38) on the RTA at the top: the desk's own analyser of that source. */
     private fun showOnRta(ch: Int) { recorder.setRtaSource(ch); rta.restart() }
@@ -799,7 +818,7 @@ class MainActivity : ComponentActivity() {
         val src by recorder.rtaSource.collectAsState()
         val onMain = src == 0x38
         val labelsNow by store.labels.collectAsState()
-        Row(Modifier.fillMaxWidth().height(96.dp).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().height(132.dp).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Canvas(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(6.dp)).background(Panel)) {
                 val n = 10; val w = size.width / n
                 fun y(db: Double) = (size.height * (-db / 50.0)).toFloat().coerceIn(0f, size.height)

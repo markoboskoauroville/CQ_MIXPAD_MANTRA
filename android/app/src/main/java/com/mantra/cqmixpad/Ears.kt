@@ -130,13 +130,17 @@ class Rta {
                 System.arraycopy(ring, n / 2, ring, 0, n / 2); System.arraycopy(hop, 0, ring, n / 2, n / 2)
                 val re = DoubleArray(n) { ring[it] / 32768.0 * window[it] }; val im = DoubleArray(n)
                 var ms = 0.0; for (s in hop) { val x = s / 32768.0; ms += x * x }
-                level.value = 10 * log10(ms / hop.size + 1e-12)
+                // while the desk's own RTA streams, the phone microphone feeds only the feedback guard, never the display
+                // (8.11.2026: both wrote the same bars, so they jumped between the room and the desk)
+                val deskOn = System.currentTimeMillis() - deskAt < 3000
+                if (!deskOn) level.value = 10 * log10(ms / hop.size + 1e-12)
                 if (deaf) continue                                    // our own voice: not the room
                 fft(re, im)
                 val p = DoubleArray(10)
                 val spec = DoubleArray(n / 2)
                 for (k in 1 until n / 2) { val pw = re[k] * re[k] + im[k] * im[k]; spec[k] = pw; val b = bin[k]; if (b >= 0) p[b] += pw }
                 onSpectrum?.invoke(spec)
+                if (deskOn) continue
                 for (i in 0 until 10) { smooth[i] = 0.8 * smooth[i] + 0.2 * p[i]; sum[i] += p[i] }
                 levelSum += ms / hop.size
                 frames++
@@ -149,7 +153,9 @@ class Rta {
 
     /** The desk's own RTA (31 one-third-octave bands, dB) in place of the phone microphone: summed into the ten
      *  octave bands (31.5 Hz = bands 1..3, 63 = 4..6, ... 16 kHz = 28..30) as band share of the whole. */
+    @Volatile var deskAt = 0L
     fun feedDesk(b: FloatArray) {
+        deskAt = System.currentTimeMillis()
         val p = DoubleArray(10)
         for (o in 0 until 10) for (k in (3 * o + 1)..minOf(3 * o + 3, 30)) { val db = b[k].toDouble(); if (db > -105) p[o] += Math.pow(10.0, db / 10) }
         val tot = p.sum()
