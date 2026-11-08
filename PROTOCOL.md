@@ -139,3 +139,15 @@ Mantra Sandbox (headless Android emulator, github.com/markoboskoauroville/MANTRA
 Dump offsets per input k (stride 280, checked on all ten inputs): gate attack 488, release 490, hold 492, threshold 494,
 depth 496 · PEQ band b gain 520+6b, freq 522+6b, width 524+6b · comp attack 572, release 574, threshold 576, gain 578,
 ratio 580 (low byte). A shelf/filter band keeps another number in its width word (1808, 2840 seen).
+
+## Tour of the outputs and stereo inputs (8.11.2026, night; CQ MixPad in the Mantra Sandbox)
+| function | message | proof |
+|---|---|---|
+| Out1-6 / Main LR PEQ | `F7 28 28 PP CH band <v>`: PP 0C gain, 0D freq, 0E width (as the input PEQ); CH Out1-6 30-35, Main LR 38 | Main LF gain dragged in MixPad; freq/width/gain shown for CH 38 and 30 by injection |
+| Out / Main LR compressor | `F7 10 10 PP 38 00 <v>`: the input compressor's block and params with CH 38 | Main threshold dragged in MixPad |
+| Main LR limiter | `F7 29 29 PP 38 00 <v>`: 0C in, 0D threshold (dB), 0E speed 0 fast / 1 slow | threshold dragged; in and speed shown by injection |
+| ST IN / USB / BT processing | input blocks (gate 0D, PEQ 0F, comp 10) with CH 18 / 1C / 1E (block 28 is ignored for them) | USB PEQ shown by injection |
+Dump: the 280-byte channel blocks are indexed by CH number (ST IN 24, USB 28, BT 30, Out1 48 … Main LR 56), same layout:
+Main LR PEQ 16200+6b, comp 16252… (attack, release, threshold, gain, ratio), limiter threshold 16292.
+On 8.11.2026 Main LR: PEQ flat (63 Hz, 220 Hz, 2.5 kHz, 10 kHz), comp OUT (3.7:1, −13.9 dB, 24.5 ms, 184 ms, RMS soft),
+limiter OUT (−3 dB, fast). Every value put back; dump diff zero. Still open: Out GEQ, FBA, FX inner tabs, meter type 24.
