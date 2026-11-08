@@ -68,8 +68,10 @@ class Rta {
     companion object {
         val BANDS = doubleArrayOf(31.5, 63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0)
         val NAMES = listOf("31", "63", "125", "250", "500", "1k", "2k", "4k", "8k", "16k")
-        /** Krishna Das references, band share of the whole (dB). */
-        val KD = doubleArrayOf(-43.4, -11.7, -6.5, -5.4, -7.6, -8.7, -14.0, -18.7, -25.3, -37.6)
+        /** Krishna Das references, band share of the whole (dB), MEASURED THROUGH THE DESK'S OWN RTA (8.11.2026: the two
+         *  references played into the CQ's USB channel, read on Main LR, CQ_MIXPAD_MANTRA tools/kd_desk.json), so the
+         *  mix and the target are measured the same way. (The FFT values used before put 31 Hz +13 and 16 kHz +20 off.) */
+        val KD = doubleArrayOf(-29.0, -13.8, -6.6, -7.5, -6.4, -6.3, -11.8, -15.7, -21.4, -30.8)
     }
 
     /** Smoothed live profile (about 1 s), and the long average since the last reset (for MATCH). */
@@ -151,14 +153,23 @@ class Rta {
         val p = DoubleArray(10)
         for (o in 0 until 10) for (k in (3 * o + 1)..minOf(3 * o + 3, 30)) { val db = b[k].toDouble(); if (db > -105) p[o] += Math.pow(10.0, db / 10) }
         val tot = p.sum()
-        level.value = if (tot > 0) 10 * log10(tot) else -110.0
-        if (tot <= 0) return
-        for (i in 0 until 10) { smoothDesk[i] = 0.7 * smoothDesk[i] + 0.3 * p[i]; sum[i] += p[i] }
+        val lv = if (tot > 0) 10 * log10(tot) else -110.0
+        // a dropout frame (the desk sends one now and then, 8.11.2026: -83 dB in the middle of a song) is skipped,
+        // not drawn: anything 20 dB under the running level while music plays
+        if (tot <= 0 || (runLevel > -60 && lv < runLevel - 20)) return
+        runLevel = if (runLevel < -100) lv else 0.95 * runLevel + 0.05 * lv
+        level.value = runLevel
+        // about 2 s of averaging at ~25 frames a second (Marko: "it's just randomly vibrating")
+        val a = if (smoothDesk.sum() <= 0) 1.0 else 0.02
+        for (i in 0 until 10) { smoothDesk[i] = (1 - a) * smoothDesk[i] + a * p[i]; sum[i] += p[i] }
         levelSum += tot
         frames++
         live.value = share(smoothDesk)
     }
     private val smoothDesk = DoubleArray(10)
+    private var runLevel = -110.0
+    /** A new RTA source (another channel): start the average again. */
+    fun restart() { smoothDesk.fill(0.0); runLevel = -110.0; reset() }
 
     /** In-place radix-2 FFT. */
     private fun fft(re: DoubleArray, im: DoubleArray) {

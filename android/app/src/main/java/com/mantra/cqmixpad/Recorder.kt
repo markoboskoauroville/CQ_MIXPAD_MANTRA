@@ -71,7 +71,7 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
         val s = Socket(); s.connect(InetSocketAddress(ip, 51326), 3000); s.soTimeout = 6000; s.tcpNoDelay = true
         val o = s.getOutputStream(); val i = s.getInputStream()
         o.write(hello); o.flush(); delay(100); o.write(f(1)); o.flush(); delay(100); o.write(f(12, 2, 0)); o.flush()
-        delay(100); o.write(byteArrayOf(0xF7.toByte(), 0x2F, 0x2F, 0x0F, 0x00, 0x38, 0x01, 0x00)); o.flush()   // RTA on
+        delay(100); o.write(byteArrayOf(0xF7.toByte(), 0x2F, 0x2F, 0x0F, 0x00, rtaSource.value.toByte(), 0x01, 0x00)); o.flush()   // RTA on (its source)
         val udpJob = scope.launch(Dispatchers.IO) { meterLoop(udp, ip) }
         out = o; connected.value = true; refused.value = 0
         val dump = scope.launch(Dispatchers.IO) {     // ask for the full data (armed tracks) now and every minute
@@ -127,6 +127,13 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
                     val len = (buf[j + 2].toInt() and 0xFF) or ((buf[j + 3].toInt() and 0xFF) shl 8)
                     val o = j + 6
                     if (len < 0 || o + len > n) break
+                    // input meters (type 8: 20 bytes per input, the level at +14) and output meters (type 9: 16 bytes
+                    // per output, the level at +14; 6/7 = Main L/R), dB = (raw - 0x8000)/256 with 0 = the desk's nominal
+                    // (DigiMixer's layout; verified on the CQ-12T 8.11.2026 with the SD playback of CQ-MT006)
+                    if (type == 8 && len >= 20 * 16) {
+                        inMeters.value = FloatArray(16) { k -> lvl(buf, o + 20 * k + 14) }; metersAt = System.currentTimeMillis()
+                    }
+                    if (type == 9 && len >= 16 * 8) outMeters.value = FloatArray(8) { k -> lvl(buf, o + 16 * k + 14) }
                     if (type == 23 && len >= 343 * 2) {
                         rta.value = FloatArray(31) { k -> val w = o + (312 + k) * 2; val raw = (buf[w].toInt() and 0xFF) or ((buf[w + 1].toInt() and 0xFF) shl 8); (raw - 0x8000) / 256f }
                         rtaAt = System.currentTimeMillis()
@@ -195,6 +202,38 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
         }
         return true
     }
+    private fun lvl(b: ByteArray, w: Int): Float = (((b[w].toInt() and 0xFF) or ((b[w + 1].toInt() and 0xFF) shl 8)) - 0x8000) / 256f
+
+    /** Input meters Ip1..Ip16 and output meters Out1..6, Main L, Main R (dB, 0 = nominal, about -18 dBFS; -110 = silence). */
+    val inMeters = MutableStateFlow(FloatArray(16) { -110f })
+    val outMeters = MutableStateFlow(FloatArray(8) { -110f })
+    @Volatile var metersAt = 0L
+    fun metersAlive() = System.currentTimeMillis() - metersAt < 3000
+
+    /** The CQ private protocol's 8-byte message F7 BB BB PP CH SS VL VH (cq_mixpad_protocol, decoded 8.11.2026). */
+    private fun m(block: Int, param: Int, ch: Int, sub: Int, v: Int) = byteArrayOf(0xF7.toByte(), block.toByte(), block.toByte(),
+        param.toByte(), ch.toByte(), sub.toByte(), (v and 0xFF).toByte(), ((v shr 8) and 0xFF).toByte())
+    private fun dbRaw(db: Double) = (0x8000 + Math.round(db.coerceIn(-100.0, 100.0) * 256)).toInt().coerceIn(0, 0xFFFF)
+
+    /** The RTA's source: 0x38 = Main LR, 0..9 = Ip1..Ip10 (verified: each channel shows its own spectrum). */
+    val rtaSource = MutableStateFlow(0x38)
+    fun setRtaSource(ch: Int): Boolean { rtaSource.value = ch; return send(m(0x2F, 0x0F, 0, ch, 1)) }
+
+    /** PEQ band gain (band 0 LF, 1 LM, 2 HM, 3 HF) on Ip channel 0..9, dB. */
+    fun peqGain(ch: Int, band: Int, db: Double): Boolean = send(m(0x0F, 0x0C, ch, band, dbRaw(db.coerceIn(-15.0, 15.0))))
+    fun peqIn(ch: Int, on: Boolean): Boolean = send(m(0x0F, 0x10, ch, 0, if (on) 1 else 0))
+    /** HPF on/off and frequency (Hz = 82.5 * 10^((raw - 0x4E9B)/15316), two measured points; kept to 20..400 Hz). */
+    fun hpf(ch: Int, on: Boolean): Boolean = send(m(0x0C, 0x0C, ch, 0, if (on) 1 else 0))
+    fun hpfHz(ch: Int, hz: Double): Boolean =
+        send(m(0x0C, 0x0D, ch, 0, (0x4E9B + 15316 * Math.log10(hz.coerceIn(20.0, 400.0) / 82.5)).toInt().coerceIn(0, 0xFFFF)))
+
+    /** The SD player (block 11 param 10) and the USB stick's stereo recorder (param 0F). */
+    private fun t(param: Int, op: Int) = byteArrayOf(0xF7.toByte(), 0x11, 0x11, param.toByte(), op.toByte(), 0xFF.toByte(), 0, 0, 0)
+    fun sdPrev() = send(t(0x10, 0)); fun sdStop() = send(t(0x10, 1)); fun sdPlayPause() = send(t(0x10, 2)); fun sdNext() = send(t(0x10, 4))
+    fun sdSeek(ms: Long): Boolean = send(byteArrayOf(0xF7.toByte(), 0x11, 0x11, 0x10, 0x06, (ms and 0xFF).toByte(), ((ms shr 8) and 0xFF).toByte(),
+        ((ms shr 16) and 0xFF).toByte(), ((ms shr 24) and 0xFF).toByte()))
+    fun usbRec() = send(t(0x0F, 3)); fun usbStop() = send(t(0x0F, 1))
+
     fun rec(): Boolean = send(byteArrayOf(0xF7.toByte(), 0x11, 0x11, 0x11, 0x03, 0xFF.toByte(), 0, 0, 0))
     fun stop(): Boolean = send(byteArrayOf(0xF7.toByte(), 0x11, 0x11, 0x10, 0x01, 0xFF.toByte(), 0, 0, 0,
         0xF7.toByte(), 0x11, 0x11, 0x11, 0x01, 0xFF.toByte(), 0, 0, 0))

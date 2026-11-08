@@ -29,6 +29,8 @@ class Brain(private val store: Store) {
             "soft_key" -> "press soft key ${input.optInt("number")}"
             "remember" -> "remember: ${input.optString("note")}"
             "note_for_marko" -> "YOU: ${input.optString("text")}"
+            "set_eq" -> "${input.optString("channel")} EQ ${input.optString("band")} ${String.format(java.util.Locale.US, "%+.1f", input.optDouble("gain_db"))} dB"
+            "set_hpf" -> "${input.optString("channel")} HPF " + if (input.optBoolean("on", true)) "${input.optDouble("hz", 0.0).toInt()} Hz" else "off"
             else -> "$name $input"
         }
 
@@ -52,6 +54,8 @@ class Brain(private val store: Store) {
                 "set_label" -> "channel ${ch.removePrefix("Ip")} is ${input.optString("name").ifBlank { input.optString("role") }}"
                 "recall_scene" -> "scene ${input.optInt("number")} recalled"
                 "soft_key" -> "soft key ${input.optInt("number")} pressed"
+                "set_eq" -> "$who equaliser ${mapOf("LF" to "low", "LM" to "low mid", "HM" to "high mid", "HF" to "high")[input.optString("band")] ?: ""} at ${db(input.optDouble("gain_db"))}"
+                "set_hpf" -> if (input.optBoolean("on", true)) "$who high pass at ${input.optDouble("hz", 0.0).toInt()} hertz" else "$who high pass off"
                 else -> ""
             }
         }
@@ -96,7 +100,12 @@ class Brain(private val store: Store) {
             tool("soft_key", "Press one of the CQ's soft keys (1..3).", listOf("number"), "number" to mapOf("type" to "integer")),
             tool("remember", "Keep a lesson about mixing Santoshi for the next concerts (one short sentence).", listOf("note"),
                 "note" to mapOf("type" to "string")),
-            tool("note_for_marko", "Something only Marko can do in CQ MixPad (the MIDI link cannot load Library presets, change EQ/compressor/gain or write names on the desk): one short instruction, e.g. 'Ip1: Processing → Library → Acoustic Guitar'.",
+            tool("set_eq", "Set one band of an input's 4-band parametric EQ (its frequency stays as the desk has it): band LF (low, about 100 Hz), LM (low mid), HM (high mid), HF (high, about 3 kHz and up); gain_db -15..+15. Only Ip1..Ip10. Small moves: 1 to 3 dB.",
+                listOf("channel", "band", "gain_db"), "channel" to ch, "band" to mapOf("type" to "string", "enum" to listOf("LF", "LM", "HM", "HF")),
+                "gain_db" to mapOf("type" to "number")),
+            tool("set_hpf", "An input's high-pass filter (low cut): on/off and its frequency in Hz (20..400). Voices about 100-150 Hz, guitars about 80-120 Hz.",
+                listOf("channel", "on"), "channel" to ch, "on" to mapOf("type" to "boolean"), "hz" to mapOf("type" to "number")),
+            tool("note_for_marko", "Something only Marko can do in CQ MixPad (Library presets, compressor, gate, gain, names on the desk): one short instruction, e.g. 'Ip1: Processing → Library → Acoustic Guitar'.",
                 listOf("text"), "text" to mapOf("type" to "string")),
         )
     }
@@ -113,8 +122,9 @@ What you know about Santoshi (from his tutorial, 2026):
 How you act:
 - You control the desk only through the tools. Channels are the CQ's names (Ip1..Ip10, ST1, USB, BT, FX1, FX2 returns). "channel one" means Ip1.
 - When Marko says who is on a channel ("backing vocal Diana on channel 4"), call set_label with name "Diana" (only the person goes on the channel) and role "backing vocal" (the function, which decides how you mix it: lead vocals in the first plan, backing vocals under them, instruments behind the voices). Give it a sensible starting level and pan if Marko is setting up, and use note_for_marko for the Library preset to load in MixPad.
-- The RTA is the phone's microphone: judge only 63 Hz to 8 kHz from it (below and above it reads its own noise). If the room level is below -55 dBFS there is no music to judge: say so and change nothing.
-- The tonal target is the Krishna Das references (the profile in the RTA lines). Compare the RTA with it and fit the mix to it, keeping the vocals in the first plan. The MIDI link moves only faders, sends, mutes and pans: it cannot reach EQ, gain or compressors. So you correct the balance yourself with faders, and for EQ you say exactly what to do in MixPad with note_for_marko (channel, PEQ band, frequency, dB), small moves of 1 to 3 dB.
+- The RTA is the mixer's own analyser of the Main LR mix (31 bands summed into octaves, about 2 s averaged); the Krishna Das target was measured through the same analyser, so they compare directly. If the level is below -80 dB there is no music to judge: say so and change nothing.
+- The tonal target is the Krishna Das references (the profile in the RTA lines). Compare the RTA with it and fit the mix to it, keeping the vocals in the first plan. You can move faders, sends, mutes and pans, each input's EQ band gains (set_eq) and its high-pass filter (set_hpf). Compressor, gate, gain and Library presets you still give to Marko with note_for_marko. Fix the balance between players with faders first, the tone with EQ second, small moves of 1 to 3 dB.
+- Santoshi's order of importance: the vocals first; in a call-and-response song the answering voices are as loud as the leading one. Then Igor's guitar, then Snoopy's guitar.
 - Be careful: this is a live concert. Never change more than asked. Moves larger than +6 dB at once, unmuting, or touching the MAIN MASTER need Marko's clear words. Small steps (1-3 dB) when correcting.
 - When you are given a room analysis and asked for suggestions, propose concrete moves as tool calls (they wait for his APPLY) and explain the reason in the sentence.
 - Use remember for what was learnt (what worked at this venue, a player's habits).
