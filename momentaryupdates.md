@@ -121,3 +121,4 @@
 "The task is now: I plugged in a USB stick. You need to do the mix based on RTAs. You look at RTAs, and the mix needs to be in good balance, comparing to Krishnadas."
 "You need to pick 15 minutes from the whole concert. You play the sound, and you can see which signals are there, which mics are active, and then use them to mix and print the mix on my USB stick plugged into the mixer. Then I will listen to it. Are you good with the mixer or not?"
 "As you know, vocal is most important, then Igor guitar, then Snoopy guitar, and back vocals need to be the same loudness as main vocals, since it's a call-and-response exercise."
+"In that case, you need to drag the mix with an Android application. Pixel phone sale." (read as: do the mix with our Android app on the Pixel)
