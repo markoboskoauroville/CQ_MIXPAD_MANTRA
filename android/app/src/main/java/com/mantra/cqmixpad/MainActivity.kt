@@ -274,6 +274,14 @@ class MainActivity : ComponentActivity() {
         for (d in 1..4) link.values[Cq.dcaLevelParam(d)]?.let { append("DCA$d ${Cq.dbText(Cq.valueToDb(it))}${if (link.muted(Cq.dcaMuteParam(d))) " MUTED" else ""}\n") }
         // the desk's measured levels (8.11.2026): what each player really delivers, so the balance can be judged
         levelsText()?.let { append(it) }
+        // each input's processing as the desk holds it now (read from its state; set_eq / set_hpf set ABSOLUTE values)
+        if (recorder.state0.value != null) {
+            append("INPUT SETTINGS NOW (from the desk): ")
+            append((0 until 10).joinToString("; ") { k ->
+                fun f(d: Double?) = d?.let { String.format(Locale.US, "%+.1f", it) } ?: "?"
+                "Ip${k + 1} trim ${f(recorder.trimNow(k))}, HPF ${if (recorder.hpfOnNow(k) == true) String.format(Locale.US, "%.0f Hz", recorder.hpfHzNow(k) ?: 0.0) else "off"}, EQ LF ${f(recorder.peqNow(k, 0))} LM ${f(recorder.peqNow(k, 1))} HM ${f(recorder.peqNow(k, 2))} HF ${f(recorder.peqNow(k, 3))}"
+            }).append('\n')
+        }
         if (METERS_DECODED && meters.alive.value) {
             val inp = meters.inputs.value; val o = meters.outputs.value
             append("LIVE METERS (dBFS, the desk's own): ")

@@ -100,7 +100,7 @@ class Brain(private val store: Store) {
             tool("soft_key", "Press one of the CQ's soft keys (1..3).", listOf("number"), "number" to mapOf("type" to "integer")),
             tool("remember", "Keep a lesson about mixing Santoshi for the next concerts (one short sentence).", listOf("note"),
                 "note" to mapOf("type" to "string")),
-            tool("set_eq", "Set one band of an input's 4-band parametric EQ (its frequency stays as the desk has it): band LF (low, about 100 Hz), LM (low mid), HM (high mid), HF (high, about 3 kHz and up); gain_db -15..+15. Only Ip1..Ip10. Small moves: 1 to 3 dB.",
+            tool("set_eq", "Set one band of an input's 4-band parametric EQ to an ABSOLUTE gain (to cut 3 dB more, take its value in INPUT SETTINGS NOW and subtract 3; its frequency stays as the desk has it): band LF (low, about 100 Hz), LM (low mid), HM (high mid), HF (high, about 3 kHz and up); gain_db -15..+15. Only Ip1..Ip10. Small moves: 1 to 3 dB.",
                 listOf("channel", "band", "gain_db"), "channel" to ch, "band" to mapOf("type" to "string", "enum" to listOf("LF", "LM", "HM", "HF")),
                 "gain_db" to mapOf("type" to "number")),
             tool("set_hpf", "An input's high-pass filter (low cut): on/off and its frequency in Hz (20..400). Voices about 100-150 Hz, guitars about 80-120 Hz.",
@@ -124,6 +124,7 @@ How you act:
 - When Marko says who is on a channel ("backing vocal Diana on channel 4"), call set_label with name "Diana" (only the person goes on the channel) and role "backing vocal" (the function, which decides how you mix it: lead vocals in the first plan, backing vocals under them, instruments behind the voices). Give it a sensible starting level and pan if Marko is setting up, and use note_for_marko for the Library preset to load in MixPad.
 - The RTA is the mixer's own analyser of the Main LR mix (31 bands summed into octaves, about 2 s averaged); the Krishna Das target was measured through the same analyser, so they compare directly. If the level is below -80 dB there is no music to judge: say so and change nothing.
 - The tonal target is the Krishna Das references (the profile in the RTA lines). Compare the RTA with it and fit the mix to it, keeping the vocals in the first plan. You can move faders, sends, mutes and pans, each input's EQ band gains (set_eq) and its high-pass filter (set_hpf). Compressor, gate, gain and Library presets you still give to Marko with note_for_marko. Fix the balance between players with faders first, the tone with EQ second, small moves of 1 to 3 dB.
+- INPUT SETTINGS NOW lists each input's trim, high-pass and EQ band gains as the desk holds them: set_eq and set_hpf set absolute values, so start from these.
 - MEASURED LEVELS give each live input's real level; its level in the mix is that plus its MAIN fader. Use them to set the balance (do not guess from fader positions alone).
 - Santoshi's order of importance: the vocals first; in a call-and-response song the answering voices are as loud as the leading one. Then Igor's guitar, then Snoopy's guitar.
 - Be careful: this is a live concert. Never change more than asked. Moves larger than +6 dB at once, unmuting, or touching the MAIN MASTER need Marko's clear words. Small steps (1-3 dB) when correcting.
