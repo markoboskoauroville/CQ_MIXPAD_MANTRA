@@ -1,3 +1,5 @@
+> **Moved 8.11.2026:** the protocol is now a database of its own, public: https://github.com/markoboskoauroville/cq_mixpad_protocol (protocol.json + PROTOCOL.md + tools). New codes go there first; this file stays as the history of the decoding.
+
 # The CQ-12T's private protocol (decoded 7.11.2026, man-in-the-middle on the Mac: tools/cq_mitm.py)
 
 Captures: ~/Developer/CQ_MIXPAD_MANTRA/captures/20261107-142825/ (tcp_c2d, tcp_d2c, udp_d2c, udp_c2d, find,
