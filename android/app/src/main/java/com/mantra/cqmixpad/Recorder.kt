@@ -164,7 +164,8 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
             if (same >= 3 || state.value == State.UNKNOWN && same >= 2) setState(if (rec) State.RECORDING else State.STOPPED)
             if (!rec) {
                 val n = name(d, 7, 4) + name(d, 12, 4)                  // "CQ-M" + "002" (the desk splits it)
-                if (n.startsWith("CQ")) take.value = n.replace("CQ-M", "CQ-MT")
+                if (n.startsWith("CQ-M")) take.value = n.replace("CQ-M", "CQ-MT")
+                else if (n.startsWith("CQ-S")) usbTake.value = n.replace("CQ-S", "CQ-ST")   // the USB stick's stereo take
             }
             remaining.value = (u32(d, 20) * 1.98).toLong()      // calibrated against MixPad's "Remaining" (7.11.2026)
         } else if (d.size == 283 && (d[0].toInt() and 0xFF) == 0x11 && (d[1].toInt() and 0xFF) == 0x12) {
@@ -255,7 +256,11 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
     fun sdPrev() = send(t(0x10, 0)); fun sdStop() = send(t(0x10, 1)); fun sdPlayPause() = send(t(0x10, 2)); fun sdNext() = send(t(0x10, 4))
     fun sdSeek(ms: Long): Boolean = send(byteArrayOf(0xF7.toByte(), 0x11, 0x11, 0x10, 0x06, (ms and 0xFF).toByte(), ((ms shr 8) and 0xFF).toByte(),
         ((ms shr 16) and 0xFF).toByte(), ((ms shr 24) and 0xFF).toByte()))
-    fun usbRec() = send(t(0x0F, 3)); fun usbStop() = send(t(0x0F, 1))
+    /** The USB stick's stereo recorder, as pressed here (the desk's status for it is not decoded yet): since when. */
+    val usbSince = MutableStateFlow(0L)
+    val usbTake = MutableStateFlow("")
+    fun usbRec(): Boolean { usbSince.value = System.currentTimeMillis(); return send(t(0x0F, 3)) }
+    fun usbStop(): Boolean { usbSince.value = 0L; return send(t(0x0F, 1)) }
 
     fun rec(): Boolean = send(byteArrayOf(0xF7.toByte(), 0x11, 0x11, 0x11, 0x03, 0xFF.toByte(), 0, 0, 0))
     fun stop(): Boolean = send(byteArrayOf(0xF7.toByte(), 0x11, 0x11, 0x10, 0x01, 0xFF.toByte(), 0, 0, 0,

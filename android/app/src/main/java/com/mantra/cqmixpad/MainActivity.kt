@@ -311,7 +311,7 @@ class MainActivity : ComponentActivity() {
                     if (!withRta || act.name in setOf("remember", "note_for_marko", "set_label")) apply(act)
                 }
                 // the concert keeps what was done tonight
-                if (!withRta && a.actions.any { it.name in setOf("set_level", "change_level", "set_mute", "set_pan", "set_eq", "set_hpf") }) {
+                if (!withRta && a.actions.any { it.name in setOf("set_level", "change_level", "set_mute", "set_pan", "set_eq", "set_hpf", "set_trim") }) {
                     kotlinx.coroutines.delay(400); store.saveMix(HashMap(link.values), deskText())
                 }
                 // always spoken: Sonnet's sentence, or what was done when it gave none
@@ -376,6 +376,11 @@ class MainActivity : ComponentActivity() {
             "soft_key" -> { link.softKey(i.optInt("number", 1)); log.add(0, "  ✓ ${a.text()}") }
             "remember" -> { store.remember(i.optString("note")); log.add(0, "  ✓ ${a.text()}") }
             "note_for_marko" -> log.add(0, "🟠 ${i.optString("text")}")
+            "set_trim" -> {
+                val c = Cq.src(ch)?.code?.takeIf { ch.startsWith("Ip") && it < 10 } ?: return log.add(0, "  ✗ ${a.text()} (trim only on Ip1..Ip10)")
+                val ok = recorder.trim(c, i.optDouble("db", 0.0))
+                log.add(0, if (ok) "  ✓ ${a.text()}" else "  ✗ ${a.text()} (no private link to the desk)")
+            }
             "set_eq", "set_hpf" -> {
                 val c = Cq.src(ch)?.code?.takeIf { ch.startsWith("Ip") && it < 10 } ?: return log.add(0, "  ✗ ${a.text()} (EQ only on Ip1..Ip10)")
                 val ok = if (a.name == "set_eq") {
@@ -580,6 +585,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
             Text("USB STICK (stereo, the Main LR mix)", color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 6.dp))
+            val usbSince by recorder.usbSince.collectAsState()
+            val usbTake by recorder.usbTake.collectAsState()
+            if (usbSince > 0) Text("● RECORDING TO USB  " + hms((now - usbSince) / 1000), color = RecRed, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            else if (usbTake.isNotBlank()) Text("last stick take: $usbTake", color = Grey, fontSize = 13.sp)
             Row {
                 Chip("● REC TO USB", RecRed, filled = true) { recorder.usbRec(); log.add(0, "  USB stick: recording") }
                 Chip("■ STOP USB", Grey) { recorder.usbStop(); log.add(0, "  USB stick: stopped") }

@@ -30,6 +30,7 @@ class Brain(private val store: Store) {
             "remember" -> "remember: ${input.optString("note")}"
             "note_for_marko" -> "YOU: ${input.optString("text")}"
             "set_eq" -> "${input.optString("channel")} EQ ${input.optString("band")} ${String.format(java.util.Locale.US, "%+.1f", input.optDouble("gain_db"))} dB"
+            "set_trim" -> "${input.optString("channel")} trim ${String.format(java.util.Locale.US, "%+.1f", input.optDouble("db"))} dB"
             "set_hpf" -> "${input.optString("channel")} HPF " + if (input.optBoolean("on", true)) "${input.optDouble("hz", 0.0).toInt()} Hz" else "off"
             else -> "$name $input"
         }
@@ -55,6 +56,7 @@ class Brain(private val store: Store) {
                 "recall_scene" -> "scene ${input.optInt("number")} recalled"
                 "soft_key" -> "soft key ${input.optInt("number")} pressed"
                 "set_eq" -> "$who equaliser ${mapOf("LF" to "low", "LM" to "low mid", "HM" to "high mid", "HF" to "high")[input.optString("band")] ?: ""} at ${db(input.optDouble("gain_db"))}"
+                "set_trim" -> "$who trim at ${db(input.optDouble("db"))}"
                 "set_hpf" -> if (input.optBoolean("on", true)) "$who high pass at ${input.optDouble("hz", 0.0).toInt()} hertz" else "$who high pass off"
                 else -> ""
             }
@@ -103,6 +105,8 @@ class Brain(private val store: Store) {
             tool("set_eq", "Set one band of an input's 4-band parametric EQ to an ABSOLUTE gain (to cut 3 dB more, take its value in INPUT SETTINGS NOW and subtract 3; its frequency stays as the desk has it): band LF (low, about 100 Hz), LM (low mid), HM (high mid), HF (high, about 3 kHz and up); gain_db -15..+15. Only Ip1..Ip10. Small moves: 1 to 3 dB.",
                 listOf("channel", "band", "gain_db"), "channel" to ch, "band" to mapOf("type" to "string", "enum" to listOf("LF", "LM", "HM", "HF")),
                 "gain_db" to mapOf("type" to "number")),
+            tool("set_trim", "Set an input's trim (digital gain after the preamp, -24..+24 dB, ABSOLUTE; its present value is in INPUT SETTINGS NOW). Gain staging: an input whose measured peaks pass about +12 is too hot: lower its trim and raise its fader by the same dB, the mix stays the same.",
+                listOf("channel", "db"), "channel" to ch, "db" to mapOf("type" to "number")),
             tool("set_hpf", "An input's high-pass filter (low cut): on/off and its frequency in Hz (20..400). Voices about 100-150 Hz, guitars about 80-120 Hz.",
                 listOf("channel", "on"), "channel" to ch, "on" to mapOf("type" to "boolean"), "hz" to mapOf("type" to "number")),
             tool("note_for_marko", "Something only Marko can do in CQ MixPad (Library presets, compressor, gate, gain, names on the desk): one short instruction, e.g. 'Ip1: Processing → Library → Acoustic Guitar'.",
@@ -125,6 +129,7 @@ How you act:
 - The RTA is the mixer's own analyser of the Main LR mix (31 bands summed into octaves, about 2 s averaged); the Krishna Das target was measured through the same analyser, so they compare directly. If the level is below -80 dB there is no music to judge: say so and change nothing.
 - The tonal target is the Krishna Das references (the profile in the RTA lines). Compare the RTA with it and fit the mix to it, keeping the vocals in the first plan. You can move faders, sends, mutes and pans, each input's EQ band gains (set_eq) and its high-pass filter (set_hpf). Compressor, gate, gain and Library presets you still give to Marko with note_for_marko. Fix the balance between players with faders first, the tone with EQ second, small moves of 1 to 3 dB.
 - INPUT SETTINGS NOW lists each input's trim, high-pass and EQ band gains as the desk holds them: set_eq and set_hpf set absolute values, so start from these.
+- The desk's meter scale: 0 = nominal, about -18 dBFS; +12 is about -6 dBFS; the desk clips near +18. A Main peak of +0.6 is quiet (about -17 dBFS), not near clipping.
 - MEASURED LEVELS give each live input's real level; its level in the mix is that plus its MAIN fader. Use them to set the balance (do not guess from fader positions alone).
 - Santoshi's order of importance: the vocals first; in a call-and-response song the answering voices are as loud as the leading one. Then Igor's guitar, then Snoopy's guitar.
 - Be careful: this is a live concert. Never change more than asked. Moves larger than +6 dB at once, unmuting, or touching the MAIN MASTER need Marko's clear words. Small steps (1-3 dB) when correcting.
