@@ -48,6 +48,11 @@ class UsbAudio(private val ctx: Context, private val log: (String) -> Unit) {
      *  it to the same USB input, and the older capture keeps the samples: ours read about 1 s of audio, then zeros
      *  (measured 9.11.2026, RecordActivityMonitor: an UNPROCESSED 1-ch session of ours on the USB device). */
     @Volatile var micHold: (Boolean) -> Unit = {}
+
+    /** Hypothesis of 9.11.2026: the CQ's USB capture is clocked by its playback stream (implicit feedback): with nothing
+     *  played to the desk, the Pixel got about 1 s of audio, then zeros; during the v46 probe the app's voice was playing
+     *  to the USB and the capture carried music. So while we capture, digital silence is played to the CQ's USB input. */
+    fun keepOutput(on: Boolean) = Keeper.set(ctx, on, log)
     @Volatile private var stopFlag = false
     private var thread: Thread? = null
 
@@ -137,7 +142,7 @@ class UsbAudio(private val ctx: Context, private val log: (String) -> Unit) {
     }
 
     private fun loop(dev: AudioDeviceInfo, record: Boolean, baseName: String, all: Boolean, aac: Boolean) {
-        micHold(true); Thread.sleep(400)
+        micHold(true); keepOutput(true); Thread.sleep(400)
         val (rec, enc) = open(dev) ?: run { status.value = "Android refused the USB input"; micHold(false); return }
         val ch = rec.channelCount; val rate = rec.sampleRate
         val main = if (ch >= 16) intArrayOf(14, 15) else intArrayOf(0, minOf(1, ch - 1))
@@ -180,8 +185,32 @@ class UsbAudio(private val ctx: Context, private val log: (String) -> Unit) {
             runCatching { rec.stop() }; rec.release()
             sink?.let { s -> runCatching { s.close() }; log("  USB REC saved: Music/CQ MixPad/${s.name} (${elapsedMs.value / 1000} s)") }
             take?.let { lastTake.value = it.result("take" + System.currentTimeMillis().toString(36), sink?.name?.substringBeforeLast('.') ?: "take", "CQ USB take ${sink?.name}") }
-            running.value = false; recording.value = false; live = null; micHold(false)
+            running.value = false; recording.value = false; live = null; micHold(false); keepOutput(false)
             levels.value = floatArrayOf(-120f, -120f)
+        }
+    }
+
+    /** Plays zeros to the CQ's USB output device while a capture runs (reference-counted). */
+    object Keeper {
+        private var users = 0; @Volatile private var going = false; private var t: Thread? = null
+        @Synchronized fun set(ctx: Context, on: Boolean, log: (String) -> Unit) {
+            if (on) { users++; if (users > 1) return } else { users = maxOf(0, users - 1); if (users > 0) return; going = false; t?.join(2000); t = null; return }
+            val am = ctx.getSystemService(AudioManager::class.java)
+            val out = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET }
+                ?: run { log("  USB audio: no USB output to keep the clock"); return }
+            going = true
+            t = Thread({
+                val track = android.media.AudioTrack.Builder()
+                    .setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                    .setAudioFormat(AudioFormat.Builder().setSampleRate(48000).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build())
+                    .setBufferSizeInBytes(48000).setTransferMode(android.media.AudioTrack.MODE_STREAM).build()
+                track.setPreferredDevice(out)
+                val zeros = ShortArray(4800)
+                try { track.play(); log("  USB audio: silence to ${out.productName} keeps the desk's USB clock"); while (going) track.write(zeros, 0, zeros.size) }
+                catch (e: Exception) { log("  USB audio: keeper ${e.javaClass.simpleName}") }
+                finally { runCatching { track.stop() }; track.release() }
+            }, "cq-usb-keeper").apply { start() }
         }
     }
 
