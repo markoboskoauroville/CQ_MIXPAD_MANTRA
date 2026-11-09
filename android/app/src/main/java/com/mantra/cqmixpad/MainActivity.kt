@@ -1026,9 +1026,9 @@ class MainActivity : ComponentActivity() {
                             val ch = s.ip
                             // gain block: knob, value, the AFV/AG/HPF/AMM tags; a tap opens the input's settings
                             Row(Modifier.fillMaxWidth().height(50.dp).background(Color(0xFF1C2120)).clickable { if (ch != null) openInput(ch) }.padding(2.dp), verticalAlignment = Alignment.CenterVertically) {
-                                val g = ch?.let { recorder.gainNow(it) }
+                                val g = ch?.let { recorder.trimNow(it) }   // the original shows the trim on SD/USB sources (analogue gain not yet told apart)
                                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    CqKnob(((g ?: 0.0).toFloat() + 5f) / 60f, Modifier.size(28.dp))
+                                    CqKnob(((g ?: 0.0).toFloat() + 24f) / 48f, Modifier.size(28.dp))
                                     Text(g?.let { String.format(Locale.US, "%.0f dB", it) } ?: "0 dB", color = CqText, fontSize = 11.sp)
                                 }
                             }
@@ -1345,12 +1345,14 @@ class MainActivity : ComponentActivity() {
 
         Column(Modifier.fillMaxSize().background(Bg).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp).imePadding()) {
             MaHeader()
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val land = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenWidthDp > it.screenHeightDp }
+            if (!land) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Chip(concert?.let { "${it.venue} · ${it.date}" } ?: "CONCERT", Amber, filled = true) { concertDialog = true }
                 RecChip()
             }
-            // mixes
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            // mixes (landscape: the concert and REC chips join this row, the strips need the height)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                if (land) { Chip(concert?.let { "${it.venue} · ${it.date}" } ?: "CONCERT", Amber, filled = true) { concertDialog = true }; RecChip() }
                 Chip("REC", if (mix == "REC") RecRed else RecRed.copy(alpha = 0.7f), filled = mix == "REC") { mix = "REC" }
                 for (m in listOf("MAIN", "CUSTOM", "OUT1", "OUT2", "OUT3", "OUT4", "OUT5", "OUT6", "FX1", "FX2")) Chip(m, if (m == mix) Cyan else Grey, filled = m == mix) { if (m == "CUSTOM" && mix == "CUSTOM") customEdit = !customEdit; mix = m }
                 Chip("VIEW", if (mix == "VIEW") Cyan else Grey, filled = mix == "VIEW") { mix = "VIEW" }
@@ -1475,7 +1477,7 @@ class MainActivity : ComponentActivity() {
         val sig = sigLv > -80   // no signal: the bars rest at the floor, not at the interpolated share of silence
         // the spectrum as in the lifestyle picture (9.11.2026): rainbow LED bars, colour by frequency (red low, violet high),
         // over a fine grid; the ten octave bands of the desk's RTA drawn as 48 bars, interpolated; the buttons sit in its corners
-        Box(Modifier.fillMaxWidth().height(270.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(12.dp))
+        Box(Modifier.fillMaxWidth().height(if (androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenWidthDp > it.screenHeightDp }) 64.dp else 270.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(12.dp))
             .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF0C1424), Color(0xFF101A2E))))
             .border(1.dp, Rim, RoundedCornerShape(12.dp))) {
             val deskBands by recorder.rta.collectAsState()
