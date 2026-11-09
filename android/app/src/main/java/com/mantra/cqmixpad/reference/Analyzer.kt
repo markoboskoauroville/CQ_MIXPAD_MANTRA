@@ -137,18 +137,17 @@ class Analyzer(val rate: Int, val channels: Int, private val pair: IntArray? = n
     }
 
     companion object {
-        // pyloudnorm's K-weighting coefficients for any sample rate (ITU-R BS.1770-4): b0 b1 b2 a1 a2, a0 = 1
+        // libebur128's K-weighting for any sample rate (ITU-R BS.1770-4; at 48 kHz exactly the standard's table):
+        // b0 b1 b2 a1 a2, a0 = 1. Checked: a 997 Hz full-scale sine in one channel reads -3.01 LUFS at 48 and 44.1 kHz.
         fun shelf(rate: Int): DoubleArray {
-            val g = 3.99984385397; val q = 0.7071752369554193; val fc = 1681.9744509555319
-            val a = 10.0.pow(g / 40); val w = 2 * PI * fc / rate; val al = sin(w) / (2 * q); val cw = cos(w); val sa = sqrt(a)
-            val b0 = a * ((a + 1) + (a - 1) * cw + 2 * sa * al); val b1 = -2 * a * ((a - 1) + (a + 1) * cw); val b2 = a * ((a + 1) + (a - 1) * cw - 2 * sa * al)
-            val a0 = (a + 1) - (a - 1) * cw + 2 * sa * al; val a1 = 2 * ((a - 1) - (a + 1) * cw); val a2 = (a + 1) - (a - 1) * cw - 2 * sa * al
-            return doubleArrayOf(b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0)
+            val f0 = 1681.974450955533; val g = 3.999843853973347; val q = 0.7071752369554196
+            val k = Math.tan(PI * f0 / rate); val vh = 10.0.pow(g / 20); val vb = vh.pow(0.4996667741545416); val a0 = 1 + k / q + k * k
+            return doubleArrayOf((vh + vb * k / q + k * k) / a0, 2 * (k * k - vh) / a0, (vh - vb * k / q + k * k) / a0, 2 * (k * k - 1) / a0, (1 - k / q + k * k) / a0)
         }
         fun highPass(rate: Int): DoubleArray {
-            val q = 0.5003270373238773; val fc = 38.13547087613982
-            val w = 2 * PI * fc / rate; val al = sin(w) / (2 * q); val cw = cos(w); val a0 = 1 + al
-            return doubleArrayOf((1 + cw) / 2 / a0, -(1 + cw) / a0, (1 + cw) / 2 / a0, -2 * cw / a0, (1 - al) / a0)
+            val f0 = 38.13547087602444; val q = 0.5003270373238773
+            val k = Math.tan(PI * f0 / rate); val a0 = 1 + k / q + k * k
+            return doubleArrayOf(1.0, -2.0, 1.0, 2 * (k * k - 1) / a0, (1 - k / q + k * k) / a0)
         }
         /** In-place radix-2 FFT (as Rta's). */
         fun fft(re: DoubleArray, im: DoubleArray) {
