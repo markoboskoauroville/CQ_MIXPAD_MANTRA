@@ -91,7 +91,7 @@ class ReferenceDesk(
     private fun applyTarget() { store.current()?.let { rta.target = it.deskOctaves; rta.targetName = it.name } }
 
     fun liveNow(): Live? {
-        usb.live?.let { a -> val t = a.liveThirds(); if (t != null && a.liveSeconds() >= 2) return Live(t, "CQ USB", a.liveSeconds(), a.momentary()) }
+        usb.live?.let { a -> val t = a.liveThirds(); if (t != null && a.liveSeconds() >= 2 && a.momentary() > -90) return Live(t, "CQ USB", a.liveSeconds(), a.momentary()) }
         val fresh = System.currentTimeMillis() - recorder.rtaAt < 3000 && recorder.rtaSource.value == 0x38
         if (fresh) synchronized(deskRing) {
             if (deskRing.size >= 10) {

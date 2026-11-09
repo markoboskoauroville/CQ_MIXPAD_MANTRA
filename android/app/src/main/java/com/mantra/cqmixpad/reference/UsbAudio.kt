@@ -61,7 +61,9 @@ class UsbAudio(private val ctx: Context, private val log: (String) -> Unit) {
 
     private fun scan() {
         val d = find()
-        val mc = d?.channelCounts?.maxOrNull() ?: d?.channelIndexMasks?.maxOfOrNull { Integer.bitCount(it) } ?: 0
+        // 9.11.2026: in Multitrack the Pixel lists NO channel counts for the CQ (its HAL finds no profile for 16) yet opens
+        // 16 by index mask; in Stereo it lists 2. Empty lists = the 16-channel stream.
+        val mc = d?.channelCounts?.maxOrNull() ?: d?.channelIndexMasks?.maxOfOrNull { Integer.bitCount(it) } ?: (if (d != null) 16 else 0)
         maxChannels.value = if (d == null) 0 else maxOf(mc, 2)
         val was = device.value
         device.value = d?.let { "${it.productName}  ${maxOf(mc, 2)} ch" }
@@ -80,25 +82,51 @@ class UsbAudio(private val ctx: Context, private val log: (String) -> Unit) {
 
     fun stop() { stopFlag = true; thread?.join(4000); thread = null }
 
-    @SuppressLint("MissingPermission")
+    /** Stereo, or every channel the stream has, through the first capture source that carries samples ([openUsb]). */
     private fun open(dev: AudioDeviceInfo): Pair<AudioRecord, Int>? {
         val mc = maxChannels.value
-        val tries = ArrayList<Pair<Int, Int>>()     // (channels, encoding)
-        if (mc > 2) { tries += mc to AudioFormat.ENCODING_PCM_FLOAT; tries += mc to AudioFormat.ENCODING_PCM_16BIT }
-        tries += 2 to AudioFormat.ENCODING_PCM_FLOAT; tries += 2 to AudioFormat.ENCODING_PCM_16BIT
-        for ((ch, enc) in tries) {
-            try {
-                val f = AudioFormat.Builder().setSampleRate(48000).setEncoding(enc)
-                    .apply { if (ch > 2) setChannelIndexMask((1 shl ch) - 1) else setChannelMask(AudioFormat.CHANNEL_IN_STEREO) }.build()
-                val bytes = if (enc == AudioFormat.ENCODING_PCM_FLOAT) 4 else 2
-                val r = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.UNPROCESSED).setAudioFormat(f)
-                    .setBufferSizeInBytes(48000 / 5 * ch * bytes * 4).build()
+        return openUsb(dev, if (mc > 2) listOf(mc, 2) else listOf(2), log)
+    }
+
+    companion object {
+        /** Measured on the Pixel 7 with the CQ-12T, 9.11.2026: UNPROCESSED, MIC, VOICE_RECOGNITION and DEFAULT open the
+         *  USB input and read exact zeros; VOICE_PERFORMANCE carries the desk's audio (16-bit and float), CAMCORDER only
+         *  in 16-bit. So: those first, each checked for non-zero samples in its first 0.8 s; the first one is kept when
+         *  the desk is silent (nothing to check with). Returns a STARTED record. */
+        @SuppressLint("MissingPermission")
+        fun openUsb(dev: AudioDeviceInfo, channelCounts: List<Int>, log: (String) -> Unit): Pair<AudioRecord, Int>? {
+            val tries = ArrayList<Triple<Int, Int, Int>>()     // source, channels, encoding
+            for (ch in channelCounts) {
+                tries += Triple(MediaRecorder.AudioSource.VOICE_PERFORMANCE, ch, AudioFormat.ENCODING_PCM_FLOAT)
+                tries += Triple(MediaRecorder.AudioSource.VOICE_PERFORMANCE, ch, AudioFormat.ENCODING_PCM_16BIT)
+                tries += Triple(MediaRecorder.AudioSource.CAMCORDER, ch, AudioFormat.ENCODING_PCM_16BIT)
+            }
+            var first: Pair<AudioRecord, Int>? = null
+            for ((src, ch, enc) in tries) {
+                val r = try {
+                    val f = AudioFormat.Builder().setSampleRate(48000).setEncoding(enc)
+                        .apply { if (ch > 2) setChannelIndexMask((1 shl ch) - 1) else setChannelMask(AudioFormat.CHANNEL_IN_STEREO) }.build()
+                    val bytes = if (enc == AudioFormat.ENCODING_PCM_FLOAT) 4 else 2
+                    AudioRecord.Builder().setAudioSource(src).setAudioFormat(f).setBufferSizeInBytes(48000 / 2 * ch * bytes).build()
+                } catch (e: Exception) { null } ?: continue
                 if (r.state != AudioRecord.STATE_INITIALIZED) { r.release(); continue }
                 r.setPreferredDevice(dev)
-                return r to enc
-            } catch (e: Exception) { log("  USB audio: $ch ch ${if (enc == AudioFormat.ENCODING_PCM_FLOAT) "float" else "16-bit"} refused (${e.javaClass.simpleName})") }
+                try { r.startRecording() } catch (e: Exception) { r.release(); continue }
+                if (r.routedDevice?.id != dev.id || r.channelCount != ch) { r.stop(); r.release(); continue }
+                // the check: any non-zero sample in 0.8 s
+                val n = r.channelCount; var nonzero = false
+                val fb = FloatArray(4800 * n); val sb = ShortArray(4800 * n)
+                repeat(8) {
+                    val got = if (enc == AudioFormat.ENCODING_PCM_FLOAT) r.read(fb, 0, fb.size, AudioRecord.READ_BLOCKING) else r.read(sb, 0, sb.size)
+                    if (!nonzero) for (i in 0 until maxOf(got, 0)) if ((if (enc == AudioFormat.ENCODING_PCM_FLOAT) fb[i] != 0f else sb[i].toInt() != 0)) { nonzero = true; break }
+                }
+                val sn = if (src == MediaRecorder.AudioSource.VOICE_PERFORMANCE) "VOICE_PERFORMANCE" else "CAMCORDER"
+                if (nonzero) { first?.first?.let { it.stop(); it.release() }; log("  USB audio: $sn $ch ch ${if (enc == AudioFormat.ENCODING_PCM_FLOAT) "float" else "16-bit"} carries samples"); return r to enc }
+                if (first == null) first = r to enc else { r.stop(); r.release() }
+            }
+            first?.let { log("  USB audio: no source carried samples (silent desk?): keeping the first") }
+            return first
         }
-        return null
     }
 
     private fun loop(dev: AudioDeviceInfo, record: Boolean, baseName: String, all: Boolean, aac: Boolean) {
@@ -110,7 +138,6 @@ class UsbAudio(private val ctx: Context, private val log: (String) -> Unit) {
         val outCh = if (all) ch else 2
         var sink: Sink? = null
         try {
-            rec.startRecording()
             val routed = rec.routedDevice
             running.value = true
             if (record) {

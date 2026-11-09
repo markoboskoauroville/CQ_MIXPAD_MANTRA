@@ -103,10 +103,10 @@ class MultiTrack(
         val dev = device() ?: return "no USB audio device".also { probeText.value = it }
         val sb = StringBuilder("USB ${dev.productName}: channelCounts ${dev.channelCounts.joinToString("/")}, index masks ${dev.channelIndexMasks.joinToString("/") { Integer.toHexString(it) }}, encodings ${dev.encodings.joinToString("/")}, stream ${streamMode()}\n")
         if (usb.running.value) usb.stop()
-        for (ch in listOf(16, 12, 10, 8, 6, 4, 2)) for (enc in listOf(AudioFormat.ENCODING_PCM_FLOAT, AudioFormat.ENCODING_PCM_16BIT)) {
+        for (ch in listOf(16, 12, 8, 4, 2)) for (enc in listOf(AudioFormat.ENCODING_PCM_FLOAT, AudioFormat.ENCODING_PCM_16BIT)) {
             val r = try {
                 val f = AudioFormat.Builder().setSampleRate(48000).setEncoding(enc).setChannelIndexMask((1 shl ch) - 1).build()
-                AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.UNPROCESSED).setAudioFormat(f).setBufferSizeInBytes(48000 * ch * 4 / 5).build()
+                AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.VOICE_PERFORMANCE).setAudioFormat(f).setBufferSizeInBytes(48000 * ch * 4 / 5).build()
             } catch (e: Exception) { sb.append("  $ch ch ${encName(enc)}: refused (${e.javaClass.simpleName})\n"); null } ?: continue
             if (r.state != AudioRecord.STATE_INITIALIZED) { sb.append("  $ch ch ${encName(enc)}: not initialised\n"); r.release(); continue }
             r.setPreferredDevice(dev)
@@ -120,7 +120,7 @@ class MultiTrack(
                     for (i in 0 until maxOf(got, 0)) { val v = buf[i].toDouble(); sq[i % n] += v * v }
                     frames += maxOf(got, 0) / n
                 }
-                sb.append("  $ch ch ${encName(enc)}: OPEN, delivers ${n} ch at ${r.sampleRate} Hz on ${r.routedDevice?.productName}; RMS dB per channel ")
+                sb.append("  VOICE_PERFORMANCE $ch ch ${encName(enc)}: OPEN, delivers ${n} ch at ${r.sampleRate} Hz on ${r.routedDevice?.productName}; RMS dB per channel ")
                 sb.append(sq.joinToString(" ") { String.format(Locale.US, "%.0f", 10 * log10(it / maxOf(frames, 1) + 1e-12)) }).append('\n')
             } catch (e: Exception) { sb.append("  $ch ch ${encName(enc)}: ${e.javaClass.simpleName} ${e.message}\n") }
             finally { runCatching { r.stop() }; r.release() }
@@ -159,19 +159,7 @@ class MultiTrack(
     private fun encName(e: Int) = if (e == AudioFormat.ENCODING_PCM_FLOAT) "float" else "16-bit"
 
     // ---------- record ----------
-    @SuppressLint("MissingPermission")
-    private fun openBest(dev: AudioDeviceInfo): Pair<AudioRecord, Int>? {
-        for (ch in listOf(16, 12, 8, 4, 2)) for (enc in listOf(AudioFormat.ENCODING_PCM_FLOAT, AudioFormat.ENCODING_PCM_16BIT)) {
-            try {
-                val f = AudioFormat.Builder().setSampleRate(48000).setEncoding(enc).setChannelIndexMask((1 shl ch) - 1).build()
-                val r = AudioRecord.Builder().setAudioSource(MediaRecorder.AudioSource.UNPROCESSED).setAudioFormat(f)
-                    .setBufferSizeInBytes(48000 * ch * 4 / 2).build()
-                if (r.state != AudioRecord.STATE_INITIALIZED) { r.release(); continue }
-                r.setPreferredDevice(dev); return r to enc
-            } catch (_: Exception) {}
-        }
-        return null
-    }
+    private fun openBest(dev: AudioDeviceInfo): Pair<AudioRecord, Int>? = UsbAudio.openUsb(dev, listOf(16, 12, 8, 4, 2), log)
 
     /** Starts the phone's copy of the take [take] (the desk's name, "CQ-MT008"). */
     fun start(take: String) {
@@ -227,7 +215,6 @@ class MultiTrack(
             }
         }, "cq-multitrack-writer")
         try {
-            rec.startRecording()
             running.value = true
             status.value = String.format(Locale.US, "%s: %d of %d armed tracks (Android gives %d ch, %s)%s · %s", take, got.size, want.size, ch,
                 if (enc == AudioFormat.ENCODING_PCM_FLOAT) "float" else "16-bit", if (missing.isNotEmpty()) " · NOT on the phone: " + missing.joinToString(",") else "", folder)
