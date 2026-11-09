@@ -1048,7 +1048,7 @@ class MainActivity : ComponentActivity() {
                     val col = Color.hsv(j / (nb - 1f) * 285f, 0.85f, 1f)
                     val live1 = on && sig
                     val frac = if (live1) (1.0 - (-share[j] / 45.0)).coerceIn(0.0, 1.0).toFloat()
-                               else 0.05f + 0.025f * (1 + Math.sin(j * 0.7).toFloat())     // idle: a low floor, still a rainbow
+                               else 0.10f + 0.20f * Math.sin(Math.PI * j / 30.0).toFloat() + 0.03f * Math.sin(j * 1.3).toFloat()     // idle: a low floor, still a rainbow
                     val n = maxOf(2, (frac * h / seg).toInt())
                     peaks[j] = if (live1) maxOf(frac, peaks[j] - 0.004f) else 0f
                     val c = if (live1) col else col.copy(alpha = 0.45f)
