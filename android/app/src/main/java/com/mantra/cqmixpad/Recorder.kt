@@ -254,6 +254,10 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
     fun hpfOnNow(ch: Int) = word(486 + 280 * ch)?.let { (it and 0xFF) == 1 }
     fun peqNow(ch: Int, band: Int) = dbOf(520 + 280 * ch + 6 * band)
     fun trimNow(ch: Int) = dbOf(656 + 280 * ch)
+    /** The desk's own channel name and colour index (dump slot of CH: name at 384, 13 bytes; colour u32 at 400; read on the CQ-12T 9.11.2026: 0 default, 6 purple). */
+    fun nameNow(ch: Int): String? { val b = state0.value ?: return null; val o = 384 + 280 * ch; if (o + 13 > b.size) return null
+        return String(b, o, 13, Charsets.ISO_8859_1).takeWhile { it != '\u0000' }.trim().ifBlank { null } }
+    fun colourNow(ch: Int): Int? = state0.value?.getOrNull(400 + 280 * ch)?.toInt()?.and(0xFF)
     fun gainNow(ch: Int) = dbOf(31248 + 4 * ch)
     fun askState(): Boolean = send(f(3))
 

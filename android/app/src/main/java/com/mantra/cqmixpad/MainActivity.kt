@@ -827,18 +827,20 @@ class MainActivity : ComponentActivity() {
 
     // ---------- the CQ interface (9.11.2026): the original CQ MixPad's screens, drawn by us; our intelligence is the AI panel ----------
 
-    private data class CqS(val name: String, val sub: String, val p: Int?, val mute: Int?, val pan: Int?, val ip: Int?, val meterKey: Int, val tint: Boolean = false)
+    private data class CqS(val name: String, val sub: String, val p: Int?, val mute: Int?, val pan: Int?, val ip: Int?, val meterKey: Int, val tint: Boolean = false, val colourIdx: Int = 0)
 
     private fun cqLayerStrips(layer: String, present: List<Cq.Src>, labels: Map<String, Store.Label>, outCount: Int = 6): List<CqS> {
         fun src(s: Cq.Src): CqS {
             val l = labels[s.id]
             val isIp = s.id.startsWith("Ip") && s.code < 10
-            return CqS(l?.name?.ifBlank { null } ?: s.id, s.id, Cq.sendParam(s, "MAIN"), Cq.muteParam(s), Cq.panMainParam(s), if (isIp) s.code else null, if (s.id.startsWith("Ip") && s.code < 16) s.code else -1)
+            val dn = if (isIp) recorder.nameNow(s.code) else null
+            return CqS(dn ?: l?.name?.ifBlank { null } ?: s.id, s.id, Cq.sendParam(s, "MAIN"), Cq.muteParam(s), Cq.panMainParam(s), if (isIp) s.code else null, if (s.id.startsWith("Ip") && s.code < 16) s.code else -1, colourIdx = if (isIp) recorder.colourNow(s.code) ?: 0 else 0)
         }
+        val small = present.none { it.id.startsWith("Ip") && it.code >= 10 }   // the CQ-12T has 10 inputs: layers of 5 (as in the original)
         fun ids(vararg i: String) = i.mapNotNull { id -> present.firstOrNull { it.id == id }?.let { src(it) } }
         return when (layer) {
-            "IN 1-8" -> ids(*(1..8).map { "Ip$it" }.toTypedArray())
-            "IN 9-16" -> ids(*(9..16).map { "Ip$it" }.toTypedArray())
+            "A" -> ids(*(1..(if (small) 5 else 8)).map { "Ip$it" }.toTypedArray())
+            "B" -> ids(*((if (small) 6 else 9)..(if (small) 10 else 16)).map { "Ip$it" }.toTypedArray())
             "ST.IN/FX" -> ids("ST1", "ST2", "USB", "BT", "FX1", "FX2", "FX3", "FX4")
             "OUTPUTS" -> (1..outCount).mapNotNull { n -> Cq.masterParam("OUT$n")?.let { CqS("Out$n", "OUT$n", it, Cq.masterMuteParam("OUT$n"), null, null, -1) } } +
                 listOfNotNull(Cq.masterParam("MAIN")?.let { CqS("Main LR", "MAIN", it, Cq.masterMuteParam("MAIN"), null, null, -2) })
@@ -858,6 +860,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun cqLayerLabel(k: String, small: Boolean) = when (k) { "A" -> if (small) "INPUT 1-5" else "INPUT 1-8"; "B" -> if (small) "INPUT 6-10" else "INPUT 9-16"; else -> k }
+
     private fun chooseUi(m: String) { uiMode = m; getSharedPreferences("view", MODE_PRIVATE).edit().putString("uiMode", m).apply() }
 
     @Composable
@@ -868,7 +872,7 @@ class MainActivity : ComponentActivity() {
         val connected by link.connected.collectAsState()
         val concert by store.current.collectAsState()
         var tab by remember { mutableStateOf("FADER") }
-        var layer by remember { mutableStateOf("IN 1-8") }
+        var layer by remember { mutableStateOf("A") }
         var sub by remember { mutableStateOf("HOME") }
         var aiOpen by remember { mutableStateOf(false) }
         var sel by remember { mutableStateOf<Int?>(null) }
@@ -877,6 +881,7 @@ class MainActivity : ComponentActivity() {
         val metersOn = recorder.metersAlive()
         tick.hashCode(); viewTick.hashCode()
         val strips = cqLayerStrips(layer, present, labels)
+        val smallDesk = present.none { it.id.startsWith("Ip") && it.code >= 10 }
         fun meterOf(s: CqS): Float? = if (!metersOn) null else when {
             s.meterKey >= 0 -> inM[s.meterKey]
             s.meterKey == -2 -> outM[6]
@@ -915,15 +920,15 @@ class MainActivity : ComponentActivity() {
                     }
                     CqButton("Custom", Modifier.fillMaxWidth().height(28.dp), on = layer == "Custom") { layer = "Custom" }
                     Spacer(Modifier.height(3.dp))
-                    for (l in listOf("IN 1-8", "IN 9-16", "ST.IN/FX", "OUTPUTS", "MGRP/DCA")) {
+                    for (l in listOf("A", "B", "ST.IN/FX", "OUTPUTS", "MGRP/DCA")) {
                         Column(Modifier.padding(vertical = 2.dp).fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)).background(CqPanel)
                             .border(if (layer == l) 2.dp else 1.dp, if (layer == l) CqTeal else CqLine, RoundedCornerShape(8.dp)).clickable { layer = l; sel = null }.padding(3.dp),
                             horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(l, color = if (layer == l) CqTeal else CqDim, fontSize = 8.sp, maxLines = 1)
+                            Text(cqLayerLabel(l, smallDesk), color = if (layer == l) CqTeal else CqDim, fontSize = 8.sp, maxLines = 1)
                             Canvas(Modifier.fillMaxWidth().weight(1f)) {
-                                val n = 8; val w = size.width / n
+                                val n = if (l == "A" || l == "B") (if (smallDesk) 5 else 8) else 8; val w = size.width / n
                                 for (i in 0 until n) {
-                                    val v = if (metersOn && l.startsWith("IN")) { val k = (if (l == "IN 1-8") 0 else 8) + i; if (k < 16) inM[k] else null } else null
+                                    val v = if (metersOn && (l == "A" || l == "B")) { val k = (if (l == "A") 0 else n) + i; if (k < 16) inM[k] else null } else null
                                     val f = if (v == null) 0.25f else (1f - Cq.dbToValue(v.toDouble().coerceIn(-85.0, Cq.MAX_DB)) / Cq.dbToValue(Cq.MAX_DB).toFloat()).let { 1f - it }.coerceIn(0.05f, 1f)
                                     drawRect(Color(0xFF2E7D4F), Offset(i * w + 1.5f, size.height * (1 - f)), Size(w - 3f, size.height * f))
                                 }
@@ -944,14 +949,18 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 // the right: the Main LR fader
+                // the right: Main LR, and on PROCESSING the selected strip's fader (as in the original)
                 val mp = Cq.masterParam("MAIN")
+                val rs = if (tab == "PROCESSING") strips.getOrNull(sel ?: 0) else null
+                val rp = rs?.p ?: mp
+                val rMute = (rs?.mute ?: Cq.masterMuteParam("MAIN"))?.let { link.muted(it) } ?: false
                 Column(Modifier.width(84.dp).fillMaxHeight().background(CqBg).padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    CqButton("Sends To", Modifier.fillMaxWidth().height(30.dp)) { }
-                    Text("Main LR", color = CqText, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
-                    if (mp != null) {
-                        CqFader(link.db(mp), Cq.masterMuteParam("MAIN")?.let { link.muted(it) } ?: false, if (metersOn) outM[6] else null,
-                            { link.setDb(mp, it) }, Modifier.weight(1f).fillMaxWidth())
-                        Text(Cq.dbText(link.db(mp)), color = CqText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    if (rs == null) CqButton("Sends To", Modifier.fillMaxWidth().height(30.dp)) { }
+                    Text(rs?.name ?: "Main LR", color = CqText, fontSize = 12.sp, maxLines = 1, modifier = Modifier.padding(vertical = 4.dp))
+                    if (rp != null) {
+                        CqFader(link.db(rp), rMute, if (!metersOn) null else if (rs != null) meterOf(rs) else outM[6],
+                            { link.setDb(rp, it) }, Modifier.weight(1f).fillMaxWidth())
+                        Text(Cq.dbText(link.db(rp)), color = CqText, fontSize = 13.sp, modifier = Modifier.padding(vertical = 4.dp))
                     }
                 }
             }
@@ -995,7 +1004,7 @@ class MainActivity : ComponentActivity() {
                 strips.forEachIndexed { i, s ->
                     val muted = s.mute?.let { link.muted(it) } ?: false
                     val selected = sel == i
-                    Column(Modifier.width(sw).fillMaxHeight().border(if (selected) 2.dp else 0.5.dp, if (selected) CqTeal else CqLine).padding(horizontal = 2.dp),
+                    Column(Modifier.width(sw).fillMaxHeight().background(cqTint(s.colourIdx)).border(if (selected) 2.dp else 0.5.dp, if (selected) CqTeal else CqLine).padding(horizontal = 2.dp),
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(s.name, color = CqText, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(top = 6.dp).clickable { onSel(if (selected) null else i) })
@@ -1123,7 +1132,7 @@ class MainActivity : ComponentActivity() {
         val labels by store.labels.collectAsState()
         val concert by store.current.collectAsState()
         var view by remember { mutableStateOf("Fader") }
-        var layer by remember { mutableStateOf("IN 1-8") }
+        var layer by remember { mutableStateOf("A") }
         var aiOpen by remember { mutableStateOf(false) }
         val inM by recorder.inMeters.collectAsState()
         val outM by recorder.outMeters.collectAsState()
@@ -1131,6 +1140,7 @@ class MainActivity : ComponentActivity() {
         val rtaSrc by recorder.rtaSource.collectAsState()
         tick.hashCode(); viewTick.hashCode()
         val strips = cqLayerStrips(layer, present, labels)
+        val smallDesk = present.none { it.id.startsWith("Ip") && it.code >= 10 }
         fun meterOf(s: CqS): Float? = if (!metersOn) null else when {
             s.meterKey >= 0 -> inM[s.meterKey]
             s.meterKey == -2 -> outM[6]
@@ -1148,9 +1158,9 @@ class MainActivity : ComponentActivity() {
                         Text(v, color = Color.White, fontSize = 13.sp, maxLines = 1)
                     }
                     Spacer(Modifier.height(6.dp))
-                    for (l in listOf("IN 1-8", "IN 9-16", "ST.IN/FX", "OUTPUTS", "MGRP/DCA", "Custom")) Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(3.dp))
+                    for (l in listOf("A", "B", "ST.IN/FX", "OUTPUTS", "MGRP/DCA", "Custom")) Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(3.dp))
                         .background(if (layer == l) S1Blue else S1Rail).clickable { layer = l }, contentAlignment = Alignment.Center) {
-                        Text(l, color = Color.White, fontSize = 11.sp, maxLines = 1)
+                        Text(cqLayerLabel(l, smallDesk), color = Color.White, fontSize = 11.sp, maxLines = 1)
                     }
                 }
                 Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -1163,7 +1173,7 @@ class MainActivity : ComponentActivity() {
                             val sw: Dp = if (maxWidth > maxHeight) maxOf(maxWidth / 8, 76.dp) else maxOf(maxWidth / 4, 84.dp)
                             Row(Modifier.fillMaxSize().horizontalScroll(rememberScrollState())) {
                                 strips.forEach { s ->
-                                    val col = if (s.tint) Color(0xFFA78BFA) else if (s.meterKey == -2) Color(0xFF8E959D) else chColor(s.ip ?: s.name.hashCode())
+                                    val col = if (s.tint) Color(0xFFA78BFA) else if (s.meterKey == -2) Color(0xFF8E959D) else cqAccent(s.colourIdx) ?: chColor(s.ip ?: s.name.hashCode())
                                     val muted = s.mute?.let { link.muted(it) } ?: false
                                     val rtaOn = s.ip != null && rtaSrc == s.ip
                                     Column(Modifier.width(sw).fillMaxHeight().padding(horizontal = 1.5.dp).clip(RoundedCornerShape(4.dp)).background(col.copy(alpha = 0.22f)),

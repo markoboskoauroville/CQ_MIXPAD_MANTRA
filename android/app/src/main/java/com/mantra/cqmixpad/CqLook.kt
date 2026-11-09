@@ -152,3 +152,13 @@ internal fun S1Fader(db: Double, muted: Boolean, meter: Float?, onDb: (Double) -
         drawRect(Color(0xFF3A3F45), Offset(gx - cw / 2 + 5, y - 1.5f), Size(cw - 10, 3f))
     }
 }
+
+/** The desk's channel colour index (dump slot, 400 + 280 CH): 0 default, 6 purple (seen on the CQ-12T 9.11.2026); the others are the A&H order, not yet seen. */
+internal fun cqTint(i: Int): Color = when (i) {
+    0 -> Color.Transparent; 1 -> Color(0x99A33B3B); 2 -> Color(0x992E8B57); 3 -> Color(0x99A89B2C); 4 -> Color(0x993A5FA8)
+    5 -> Color(0x99A0359A); 6 -> Color(0xCC3B2A4F); 7 -> Color(0x992F8FA0); else -> Color(0x66E5E7EB)
+}
+internal fun cqAccent(i: Int): Color? = when (i) {
+    0 -> null; 1 -> Color(0xFFF87171); 2 -> Color(0xFF4ADE80); 3 -> Color(0xFFFACC15); 4 -> Color(0xFF60A5FA)
+    5 -> Color(0xFFE879F9); 6 -> Color(0xFFA78BFA); 7 -> Color(0xFF22D3EE); else -> Color(0xFFE5E7EB)
+}
