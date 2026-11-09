@@ -23,3 +23,4 @@
   `macro capture-window` of MixPad returned a stale picture: use `macro capture-screen 2`.
 - **8.11.2026:** The desk never echoes a change to its sender; check the truth in the connect dump (`tools/cq_dump.py`).
 - **9.11.2026:** The sandbox copy of the app searches the LAN and could reach the desk: stop it (`sandbox stop`) before the Pixel app connects (one private client). A picture-driven redesign compiled on the first CI run; interpolating the 10 octave bands into 48 bars looks like the picture but shows silence as a hump, so draw the floor when the level is under -80 dB.
+- **9.11.2026:** The original CQ MixPad has a Demo unit on its start screen: walk every screen without touching the desk. Kotlin: a property `uiMode` and a function `setUiMode` clash on the JVM (rename the function). Compose strips: fixed-height blocks eat the fader's weight(1f) in landscape (about 290 dp): budget the heights.
