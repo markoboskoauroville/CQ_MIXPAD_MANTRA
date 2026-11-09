@@ -59,3 +59,32 @@ Thank you very much for your time.
 Kind regards,
 Marko Bosko
 Croatia
+
+## Existing apps first (9.11.2026, task 59, Marko: "test different apps ... find somebody who already made a solution")
+
+**Status at writing:** candidates researched and priced; no recording test done yet (every candidate needs Marko's tap on Install, or money). Results of the tests will be added below this section.
+
+### Candidates
+
+| App (package) | Price (Play Store, HR, 9.11.2026) | Claimed multichannel USB | Own USB driver? | Verdict for the test |
+|---|---|---|---|---|
+| FaderLog - USB DJ Set Recorder (`app.faderlog`, ex "Set Recorder Pro", dev TheSeriousBooty, forum.djtechtools.com post) | Free install, in-app purchases up to EUR 16.99 (do not buy) | Reads the device's UAC1/UAC2 descriptors, records each source as its own track; demo 12 ch from a Pioneer DJM-V10; recent notes add Allen & Heath Xone:DB4 / DB2 / DX / 4D "lossless straight from the mixer". Claims other class-compliant USB mixers should work | Yes: bypasses Android's USB host API and submits isochronous URBs on the usbfs fd (USBDEVFS_SUBMITURB / REAPURB). This is exactly the driver we would write | FIRST TEST, free. Closed source |
+| USB Audio Recorder PRO (`com.extreamsd.usbaudiorecorderpro`, eXtream Software Development) | EUR 5.99, no free tier or trial found | "Multichannel recording", class-compliant UAC1/UAC2 devices, USB 1.1/2.0; a user reports it works with a Tascam US-16x08 but without a channel count | Yes (own USB audio driver, same vendor as AEM) | Needs Marko (EUR 5.99; spend gate says ASK MARKO) |
+| Audio Evolution Mobile Studio (`com.extreamsd.aemobile`) | EUR 11.99, plus the custom USB audio driver in-app purchase EUR 3.99 (the stock Android USB path stays at 16-bit, high latency) | "Low latency, high quality multi-channel recording and playback", 250+ interfaces; a forum user sees 16 record tracks on a Steinberg UR824 but never confirmed the take | Yes, the EUR 3.99 add-on | Needs Marko (EUR 15.98 total) |
+| n-Track Studio (`com.ntrack.studio.demo` free, subscription USD 1.49 / 2.99 / 5.99 per month; Pro `com.ntrack.studio.eight.pro` EUR 37.03) | see left | n-Track states up to 8 simultaneous inputs, iOS wording; no Android multichannel USB claim found | No (uses Android's stock path, so the same 2-channel result as our own app) | Not worth paying; skipped |
+| UAPP / USB Audio Player PRO (`com.extreamsd.usbaudioplayerpro`) | EUR 9.49 | Playback only (own driver, bit-perfect) | Yes, but not a recorder | Not a recorder; could be used only to read what the driver logs |
+| F-Droid | free | Index (72 MB v2 JSON) searched for multichannel / multitrack / USB audio / UAC2 / audio interface: no recorder (only SyncRecord = multi-phone, TuxGuitar = tabs, Tune Tangler) | - | Nothing to test on F-Droid |
+| A1 Multitrack Record, M16 | - | up to 16 ch from class-compliant devices | - | iOS only |
+
+### The standard and Android's level of support
+
+- Standard: USB Audio Class 2.0 (clock source with SET_CUR sampling frequency, isochronous IN endpoint, subslot size 3 or 4 bytes). The CQ enumerates as a composite device with UAC2 interfaces (class 1, subclass 1 and 2, protocol 32 = UAC2 IP version) plus a MIDI streaming interface.
+- Android documentation (source.android.com/docs/core/audio/usb): the framework path historically allows only mono or stereo in isochronous mode; AOSP has since gained index-mask multichannel for AAudio (commit "aaudio: fix multichannel legacy streams", e/OS mirror), and the Java AudioFormat reference tells multichannel AudioRecord sessions to use channel index masks. In practice on the Pixel 7 the audio HAL opens the CQ at 16 ch but publishes no profile above 2 channels (LESSONS 9.11.2026), so the Java and AAudio routes return 2 channels or zeros. The only app route to 16 channels is therefore a userspace driver over usbfs, which is what the commercial apps above do.
+
+### What the Pixel itself shows (`adb shell dumpsys usb`, 9.11.2026)
+
+Device `/dev/bus/usb/001/005`, vendor 8944 (0x22F0, Allen & Heath), product 41 (0x29), class 239/2/1 (IAD composite), name CQ12T, one configuration, no root needed. Interfaces: 0 Audio control (UAC2); 1 Audio Out with alt 0 (no endpoints) and alt 1 "Stereo Out" (iso OUT ep 0x01, max packet 1024, attributes 5 = isochronous asynchronous, plus iso feedback IN ep 0x81, 4 bytes, interval 4); 2 Audio In with alt 0 and alt 1 "Stereo In" (iso IN ep 0x82, max packet 1024, attributes 37 = isochronous asynchronous implicit-feedback data); 3 MIDI control; 4 MIDI streaming (bulk 0x83 / 0x03, 512). dumpsys lists only one non-zero alt per interface, and the connection log shows the desk re-enumerating alternately as product 41 and product 38 (probably the two Stream Modes; not yet confirmed which is Multitrack). A full descriptor dump (all alt settings, channel counts in the UAC2 AS descriptors) needs our own UsbManager code or `lsusb -v` on the Mac with the same desk; `/proc/asound` and `/sys/kernel/debug/usb` are not readable over adb shell on the Pixel (permission denied).
+
+### Sniffer
+
+usbmon / Wireshark capture on the phone needs root; the Pixel 7 is stock, so no software bus sniffer is possible there. Options: (1) plug the CQ into the Mac and read its descriptors and alt settings (`system_profiler SPUSBDataType`, `ioreg -p IOUSB -l`, or libusb `lsusb -v`), which gives channel counts per alt setting and the clock requests without any sniffer; (2) a hardware USB analyser (Total Phase Beagle USB 480, about USD 1,500; cheaper: Wireshark with a Linux laptop in between using usbmon with the CQ as a device on a Linux host, or a Raspberry Pi acting as a man-in-the-middle is not practical for high speed); (3) the more useful observation without a sniffer: logcat while FaderLog records (it logs endpoint and format on many builds) and `dumpsys usb` showing which alt setting is active. Reverse-engineering means observing those facts only; no code from the closed apps is copied.
