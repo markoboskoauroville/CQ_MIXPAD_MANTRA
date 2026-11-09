@@ -875,7 +875,7 @@ class MainActivity : ComponentActivity() {
                 }
                 for (t in listOf("CONFIG", "PROCESSING", "FADER", "FX", "HOME")) Box(Modifier.weight(1f).fillMaxHeight()
                     .background(if (tab == t) Color(0xFF1B2120) else CqBar).clickable { tab = t }, contentAlignment = Alignment.Center) {
-                    Text(t, color = if (tab == t) CqTeal else CqText, fontSize = 13.sp, maxLines = 1)
+                    Text(t, color = if (tab == t) CqTeal else CqText, fontSize = if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 500) 9.sp else 12.sp, maxLines = 1, softWrap = false)
                 }
                 Box(Modifier.padding(horizontal = 8.dp).size(10.dp).clip(RoundedCornerShape(5.dp)).background(if (connected) CqTeal else Red))
                 Box(Modifier.padding(end = 6.dp).height(34.dp).clip(RoundedCornerShape(3.dp)).border(1.dp, CqLine, RoundedCornerShape(3.dp))
@@ -886,16 +886,15 @@ class MainActivity : ComponentActivity() {
             Row(Modifier.weight(1f).fillMaxWidth()) {
                 // the left column: soft keys 1-3, Custom, the five layers with their little meters
                 Column(Modifier.width(66.dp).fillMaxHeight().background(CqBg).padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    for (n in 1..3) {
-                        Text("$n", color = CqDim, fontSize = 10.sp)
-                        Box(Modifier.padding(bottom = 3.dp).width(44.dp).height(26.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xFFE6E8E8))
+                    for (n in 1..3) Row(Modifier.padding(bottom = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("$n", color = CqDim, fontSize = 9.sp, modifier = Modifier.width(10.dp))
+                        Box(Modifier.width(36.dp).height(20.dp).clip(RoundedCornerShape(5.dp)).background(Color(0xFFE6E8E8))
                             .pointerInput(n) { detectTapGestures(onLongPress = { link.softKey(n) }) })   // a soft key is the desk's: a long press only
                     }
-                    Spacer(Modifier.weight(1f))
-                    CqButton("Custom", Modifier.fillMaxWidth().height(36.dp), on = layer == "Custom") { layer = "Custom" }
-                    Spacer(Modifier.height(4.dp))
+                    CqButton("Custom", Modifier.fillMaxWidth().height(28.dp), on = layer == "Custom") { layer = "Custom" }
+                    Spacer(Modifier.height(3.dp))
                     for (l in listOf("IN 1-8", "IN 9-16", "ST.IN/FX", "OUTPUTS", "MGRP/DCA")) {
-                        Column(Modifier.padding(vertical = 2.dp).fillMaxWidth().height(48.dp).clip(RoundedCornerShape(8.dp)).background(CqPanel)
+                        Column(Modifier.padding(vertical = 2.dp).fillMaxWidth().weight(1f).clip(RoundedCornerShape(8.dp)).background(CqPanel)
                             .border(if (layer == l) 2.dp else 1.dp, if (layer == l) CqTeal else CqLine, RoundedCornerShape(8.dp)).clickable { layer = l; sel = null }.padding(3.dp),
                             horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(l, color = if (layer == l) CqTeal else CqDim, fontSize = 8.sp, maxLines = 1)
