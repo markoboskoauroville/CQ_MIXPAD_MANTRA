@@ -1010,6 +1010,8 @@ class MainActivity : ComponentActivity() {
         val src by recorder.rtaSource.collectAsState()
         val onMain = src == 0x38
         val labelsNow by store.labels.collectAsState()
+        val sigLv by rta.level.collectAsState()
+        val sig = sigLv > -80   // no signal: the bars rest at the floor, not at the interpolated share of silence
         // the spectrum as in the lifestyle picture (9.11.2026): rainbow LED bars, colour by frequency (red low, violet high),
         // over a fine grid; the ten octave bands of the desk's RTA drawn as 48 bars, interpolated; the buttons sit in its corners
         Box(Modifier.fillMaxWidth().height(190.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(12.dp))
@@ -1021,7 +1023,7 @@ class MainActivity : ComponentActivity() {
                 // fine grid
                 for (i in 0..9) drawRect(Color(0x1AFFFFFF), Offset(0f, top0 + h * i / 9f), Size(size.width, 1f))
                 for (i in 0..nb step 4) drawRect(Color(0x14FFFFFF), Offset(i * w, top0), Size(1f, h))
-                if (on) {
+                if (on && sig) {
                     val seg = 7f
                     for (j in 0 until nb) {
                         val x = j / (nb - 1f) * 9f; val i0 = x.toInt().coerceAtMost(8); val t = x - i0
@@ -1032,6 +1034,8 @@ class MainActivity : ComponentActivity() {
                         for (k in 0 until n) drawRoundRect(col, Offset(j * w + w * 0.14f, top0 + h - (k + 1) * seg + 1.5f), Size(w * 0.72f, seg - 2.5f),
                             androidx.compose.ui.geometry.CornerRadius(2f))
                     }
+                }
+                if (on) {
                     if (onMain) {
                         var px = 0f; var py = 0f
                         for (i in 0 until 10) {
