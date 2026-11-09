@@ -85,7 +85,7 @@ class Analyzer(val rate: Int, val channels: Int, private val pair: IntArray? = n
             if (chs.size >= 2) { val l = x[base + chs[0]].toDouble(); val r = x[base + chs[1]].toDouble(); mid += (l + r) * (l + r) / 4; side += (l - r) * (l - r) / 4 }
             count++
             subAcc += ms; subFill++
-            if (subFill == sub) { subs += subAcc / sub; subAcc = 0.0; subFill = 0 }
+            if (subFill == sub) { synchronized(subs) { subs += subAcc / sub }; subAcc = 0.0; subFill = 0 }
             buf[fill++] = m / chs.size
             if (fill == n) { block(); fill = 0 }
         }
@@ -98,15 +98,15 @@ class Analyzer(val rate: Int, val channels: Int, private val pair: IntArray? = n
         for (k in 1 until n / 2) { val b = bandOf[k]; if (b >= 0) p[b] += re[k] * re[k] + im[k] * im[k] }
         for (i in 0 until 31) sum31[i] += p[i]
         blocks++
-        if (rollCap > 0) { roll.addLast(p); while (roll.size > rollCap) roll.removeFirst() }
+        if (rollCap > 0) synchronized(roll) { roll.addLast(p); while (roll.size > rollCap) roll.removeFirst() }
     }
 
     /** The rolling window's thirds (share, dB), null until a block has come. */
-    fun liveThirds(): DoubleArray? = if (roll.isEmpty()) null else Bands.share(DoubleArray(31) { i -> roll.sumOf { it[i] } })
-    fun liveSeconds(): Double = roll.size * n.toDouble() / rate
-    fun resetRoll() = roll.clear()
+    fun liveThirds(): DoubleArray? = synchronized(roll) { if (roll.isEmpty()) null else Bands.share(DoubleArray(31) { i -> roll.sumOf { it[i] } }) }
+    fun liveSeconds(): Double = synchronized(roll) { roll.size } * n.toDouble() / rate
+    fun resetRoll() = synchronized(roll) { roll.clear() }
     /** The level of the last 400 ms (K-weighted, LUFS-ish), for "is there music". */
-    fun momentary(): Double = if (subs.size < 4) -120.0 else -0.691 + 10 * log10(subs.takeLast(4).average() + 1e-30)
+    fun momentary(): Double = synchronized(subs) { if (subs.size < 4) -120.0 else -0.691 + 10 * log10(subs.takeLast(4).average() + 1e-30) }
 
     fun loudness(): Double? {
         if (subs.size < 4) return null

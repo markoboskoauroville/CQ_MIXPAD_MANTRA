@@ -44,6 +44,10 @@ class UsbAudio(private val ctx: Context, private val log: (String) -> Unit) {
     val lastTake = MutableStateFlow<Profile?>(null)
     val status = MutableStateFlow("")
     @Volatile var live: Analyzer? = null; private set
+    /** Pauses the app's own microphone capture (the phone RTA / feedback guard): with the CQ plugged in, Android routes
+     *  it to the same USB input, and the older capture keeps the samples: ours read about 1 s of audio, then zeros
+     *  (measured 9.11.2026, RecordActivityMonitor: an UNPROCESSED 1-ch session of ours on the USB device). */
+    @Volatile var micHold: (Boolean) -> Unit = {}
     @Volatile private var stopFlag = false
     private var thread: Thread? = null
 
@@ -94,7 +98,10 @@ class UsbAudio(private val ctx: Context, private val log: (String) -> Unit) {
          *  in 16-bit. So: those first, each checked for non-zero samples in its first 0.8 s; the first one is kept when
          *  the desk is silent (nothing to check with). Returns a STARTED record. */
         @SuppressLint("MissingPermission")
+        /** Did the last [openUsb] find real samples (false = it kept a silent stream). */
+        @Volatile var lastCarries = false
         fun openUsb(dev: AudioDeviceInfo, channelCounts: List<Int>, log: (String) -> Unit): Pair<AudioRecord, Int>? {
+            lastCarries = false
             val tries = ArrayList<Triple<Int, Int, Int>>()     // source, channels, encoding
             for (ch in channelCounts) {
                 tries += Triple(MediaRecorder.AudioSource.VOICE_PERFORMANCE, ch, AudioFormat.ENCODING_PCM_FLOAT)
@@ -121,7 +128,7 @@ class UsbAudio(private val ctx: Context, private val log: (String) -> Unit) {
                     if (!nonzero) for (i in 0 until maxOf(got, 0)) if ((if (enc == AudioFormat.ENCODING_PCM_FLOAT) fb[i] != 0f else sb[i].toInt() != 0)) { nonzero = true; break }
                 }
                 val sn = if (src == MediaRecorder.AudioSource.VOICE_PERFORMANCE) "VOICE_PERFORMANCE" else "CAMCORDER"
-                if (nonzero) { first?.first?.let { it.stop(); it.release() }; log("  USB audio: $sn $ch ch ${if (enc == AudioFormat.ENCODING_PCM_FLOAT) "float" else "16-bit"} carries samples"); return r to enc }
+                if (nonzero) { first?.first?.let { it.stop(); it.release() }; lastCarries = true; log("  USB audio: $sn $ch ch ${if (enc == AudioFormat.ENCODING_PCM_FLOAT) "float" else "16-bit"} carries samples"); return r to enc }
                 if (first == null) first = r to enc else { r.stop(); r.release() }
             }
             first?.let { log("  USB audio: no source carried samples (silent desk?): keeping the first") }
@@ -130,7 +137,8 @@ class UsbAudio(private val ctx: Context, private val log: (String) -> Unit) {
     }
 
     private fun loop(dev: AudioDeviceInfo, record: Boolean, baseName: String, all: Boolean, aac: Boolean) {
-        val (rec, enc) = open(dev) ?: run { status.value = "Android refused the USB input"; return }
+        micHold(true); Thread.sleep(400)
+        val (rec, enc) = open(dev) ?: run { status.value = "Android refused the USB input"; micHold(false); return }
         val ch = rec.channelCount; val rate = rec.sampleRate
         val main = if (ch >= 16) intArrayOf(14, 15) else intArrayOf(0, minOf(1, ch - 1))
         val an = Analyzer(rate, ch, main, rollSec = 20.0); live = an
@@ -172,7 +180,7 @@ class UsbAudio(private val ctx: Context, private val log: (String) -> Unit) {
             runCatching { rec.stop() }; rec.release()
             sink?.let { s -> runCatching { s.close() }; log("  USB REC saved: Music/CQ MixPad/${s.name} (${elapsedMs.value / 1000} s)") }
             take?.let { lastTake.value = it.result("take" + System.currentTimeMillis().toString(36), sink?.name?.substringBeforeLast('.') ?: "take", "CQ USB take ${sink?.name}") }
-            running.value = false; recording.value = false; live = null
+            running.value = false; recording.value = false; live = null; micHold(false)
             levels.value = floatArrayOf(-120f, -120f)
         }
     }

@@ -38,11 +38,13 @@ class ReferenceDesk(
     private val concertName: () -> String,
     /** Track n (1-based) as the band calls it: "Tajana", else "Ip3" / "Tr11". */
     private val labelOf: (Int) -> String = { if (it <= 10) "Ip$it" else "Tr$it" },
+    /** Pause (true) / resume (false) the app's own microphone capture while the CQ's USB audio is read. */
+    micHold: (Boolean) -> Unit = {},
 ) {
     data class Live(val thirds: DoubleArray, val source: String, val seconds: Double, val levelDb: Double)
 
     val store = RefStore(ctx)
-    val usb = UsbAudio(ctx, log)
+    val usb = UsbAudio(ctx, log).also { it.micHold = micHold }
     val multi = MultiTrack(ctx, scope, recorder, usb, log, labelOf, concertName)
     val live = MutableStateFlow<Live?>(null)
     val busy = MutableStateFlow("")

@@ -103,6 +103,7 @@ class MultiTrack(
         val dev = device() ?: return "no USB audio device".also { probeText.value = it }
         val sb = StringBuilder("USB ${dev.productName}: channelCounts ${dev.channelCounts.joinToString("/")}, index masks ${dev.channelIndexMasks.joinToString("/") { Integer.toHexString(it) }}, encodings ${dev.encodings.joinToString("/")}, stream ${streamMode()}\n")
         if (usb.running.value) usb.stop()
+        usb.micHold(true); Thread.sleep(400)
         for (ch in listOf(16, 12, 8, 4, 2)) for (enc in listOf(AudioFormat.ENCODING_PCM_FLOAT, AudioFormat.ENCODING_PCM_16BIT)) {
             val r = try {
                 val f = AudioFormat.Builder().setSampleRate(48000).setEncoding(enc).setChannelIndexMask((1 shl ch) - 1).build()
@@ -153,6 +154,7 @@ class MultiTrack(
             } catch (e: Exception) { sb.append("  $sn ${encName(enc)}: ${e.javaClass.simpleName}\n") }
             finally { runCatching { r.stop() }; r.release() }
         }
+        usb.micHold(false)
         probeText.value = sb.toString(); log("  PROBE: " + sb.toString().replace('\n', ' '))
         return sb.toString()
     }
@@ -175,7 +177,13 @@ class MultiTrack(
     private class Track(val n: Int, val name: String, val uri: Uri, val pfd: ParcelFileDescriptor, val w: WaveFileWriter)
 
     private fun record(dev: AudioDeviceInfo, take: String) {
-        val (rec, enc) = openBest(dev) ?: run { status.value = "Android refused the USB input"; log("  MULTITRACK: " + status.value); return }
+        usb.micHold(true); Thread.sleep(400)
+        val (rec, enc) = openBest(dev) ?: run { status.value = "Android refused the USB input"; log("  MULTITRACK: " + status.value); usb.micHold(false); return }
+        if (!UsbAudio.lastCarries) {
+            // 9.11.2026: in Multitrack the Pixel opens 16 channels and delivers digital silence; never record silence as a take
+            status.value = "the Pixel gets SILENCE from the CQ's USB (${rec.channelCount} ch, stream ${streamMode()}): not recording; the SD card has the take"
+            log("  MULTITRACK: " + status.value); runCatching { rec.stop() }; rec.release(); usb.micHold(false); return
+        }
         val ch = rec.channelCount; val rate = rec.sampleRate
         val armedMask = recorder.armed.value ?: 0xFFFF
         val want = (1..16).filter { armedMask and (1 shl (it - 1)) != 0 }
@@ -255,7 +263,7 @@ class MultiTrack(
             val r = String.format(Locale.US, "%s saved: %d tracks x %.1f s in %s%s", take, list.size, framesWritten.toDouble() / rate, folder,
                 if (fifo.overruns.get() > 0) " · DROPOUTS ${fifo.overruns.get()} frames" else " · no dropouts")
             status.value = r; log("  MULTITRACK: $r")
-            running.value = false; peaks.value = FloatArray(0)
+            running.value = false; peaks.value = FloatArray(0); usb.micHold(false)
             refreshTakes()
         }
     }

@@ -120,6 +120,7 @@ class MainActivity : ComponentActivity() {
     /** Task 54: LOAD REFERENCE, MATCH to it, the CQ's USB audio recorder (package reference). */
     private lateinit var refDesk: com.mantra.cqmixpad.reference.ReferenceDesk
     private var refOpen by mutableStateOf(false)
+    private var usbHeldMic = false
     private var rtaJob: Job? = null
     private lateinit var speech: Speech
     private lateinit var voice: Voice
@@ -238,7 +239,10 @@ class MainActivity : ComponentActivity() {
             { t -> runOnUiThread { log.add(0, t) } }, { t -> runOnUiThread { say(t) } },
             { t -> runOnUiThread { command(t, fromVoice = false, withRta = true) } },
             { store.current.value?.let { "${it.venue} ${it.date}" } ?: "" },
-            { k -> store.labels.value[if (k <= 10) "Ip$k" else "Tr$k"]?.name?.ifBlank { null } ?: if (k <= 10) "Ip$k" else "Tr$k" })
+            { k -> store.labels.value[if (k <= 10) "Ip$k" else "Tr$k"]?.name?.ifBlank { null } ?: if (k <= 10) "Ip$k" else "Tr$k" },
+            { hold -> runOnUiThread {     // task 54: our phone-mic capture would take the CQ's USB input from the recorder
+                if (hold) { if (rtaJob?.isActive == true) { rta.stop(); rtaJob = null; usbHeldMic = true } }
+                else if (usbHeldMic) { usbHeldMic = false; rta.reset(); rtaJob = lifecycleScope.launch { rta.run() } } } })
         uiMode = getSharedPreferences("view", MODE_PRIVATE).getString("uiMode", "cq") ?: "cq"
         setContent { ZoomPan { Box(Modifier.fillMaxSize()) {
             when (uiMode) { "cq" -> CqScreen(); "s1" -> S1Screen(); else -> Screen() }
