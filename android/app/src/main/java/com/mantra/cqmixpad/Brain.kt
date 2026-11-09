@@ -99,7 +99,7 @@ class Brain(private val store: Store) {
                 "channel" to ch, "mix" to mix, "muted" to mapOf("type" to "boolean")),
             tool("set_pan", "Pan a channel in the MAIN mix, -100 (left) .. 0 (centre) .. 100 (right).", listOf("channel", "percent"),
                 "channel" to ch, "percent" to mapOf("type" to "number")),
-            tool("set_label", "Label a channel. name = only the person's name, as written on the channel (\"Diana\"); role = the channel's function, used for mixing (\"backing vocal\", \"lead vocal\", \"acoustic guitar DI\", \"mridangam high head\"). Remembered for every concert.",
+            tool("set_label", "Label a channel. name = only the person's name, as written on the channel (\"Tajana\"); role = the channel's function, used for mixing (\"backing vocal\", \"lead vocal\", \"acoustic guitar DI\", \"mridangam high head\"). Remembered for every concert.",
                 listOf("channel", "name", "role"), "channel" to ch, "name" to mapOf("type" to "string"), "role" to mapOf("type" to "string")),
             tool("recall_scene", "Recall a scene stored on the CQ (1..100). Scene 1 is 'Santoshi Mix'.", listOf("number"),
                 "number" to mapOf("type" to "integer")),
@@ -133,7 +133,7 @@ What you know about Santoshi (from his tutorial, 2026):
 - Scene 1 on the desk is "Santoshi Mix". The venue's house mix may return on ST1 (named House), computer playback on USB.
 How you act:
 - You control the desk only through the tools. Channels are the CQ's names (Ip1..Ip10, ST1, USB, BT, FX1, FX2 returns). "channel one" means Ip1.
-- When Marko says who is on a channel ("backing vocal Diana on channel 4"), call set_label with name "Diana" (only the person goes on the channel) and role "backing vocal" (the function, which decides how you mix it: lead vocals in the first plan, backing vocals under them, instruments behind the voices). Give it a sensible starting level and pan if Marko is setting up, and use note_for_marko for the Library preset to load in MixPad.
+- When Marko says who is on a channel ("backing vocal Tajana on channel 4"), call set_label with name "Tajana" (only the person goes on the channel) and role "backing vocal" (the function, which decides how you mix it: lead vocals in the first plan, backing vocals under them, instruments behind the voices). Give it a sensible starting level and pan if Marko is setting up, and use note_for_marko for the Library preset to load in MixPad.
 - The RTA is the mixer's own analyser of the Main LR mix (31 bands summed into octaves, about 2 s averaged); the Krishna Das target was measured through the same analyser, so they compare directly. If the level is below -80 dB there is no music to judge: say so and change nothing.
 - The tonal target is the Krishna Das references (the profile in the RTA lines). Compare the RTA with it and fit the mix to it, keeping the vocals in the first plan. You can move faders, sends, mutes and pans, each input's EQ bands (set_eq: gain, and frequency/width when needed), its high-pass filter (set_hpf) and its compressor (set_comp). Gate, analogue gain and Library presets you still give to Marko with note_for_marko. Fix the balance between players with faders first, the tone with EQ second, small moves of 1 to 3 dB.
 - INPUT SETTINGS NOW lists each input's trim, high-pass, EQ bands (gain @ frequency) and compressor as the desk holds them: set_eq, set_hpf and set_comp set absolute values, so start from these.

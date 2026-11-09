@@ -420,7 +420,7 @@ class MainActivity : ComponentActivity() {
 
     /** Words the recogniser should expect: tonight's names and roles and the mixing words. */
     private fun vocabulary(): List<String> = (store.labels.value.values.flatMap { listOf(it.name, it.instrument.substringBefore(",")) } +
-        listOf("djembe", "mridangam", "Svemir", "Tajana", "Igor", "Snoopy", "Diana", "Santoshi", "Krishna Das", "monitor", "reverb",
+        listOf("djembe", "mridangam", "Svemir", "Tajana", "Igor", "Snoopy", "Santoshi", "Krishna Das", "monitor", "reverb",
             "decibels", "mute", "unmute", "pan", "backing vocal", "lead vocal", "bass", "guitar", "channel", "scene")).filter { it.isNotBlank() }.distinct()
 
     /** SPEAK: AssemblyAI (Sync, the band's words in its prompt); Android's recogniser only when AssemblyAI fails. */
@@ -869,6 +869,7 @@ class MainActivity : ComponentActivity() {
         val labels by store.labels.collectAsState()
         var mix by remember { mutableStateOf("MAIN") }
         var keyDialog by remember { mutableStateOf(false) }
+        var showLog by remember { mutableStateOf(false) }
         var concertDialog by remember { mutableStateOf(false) }
         val concert by store.current.collectAsState()
         tick.hashCode()
@@ -890,6 +891,7 @@ class MainActivity : ComponentActivity() {
                 if (!micOk) Chip("PERMISSIONS", Amber) { openAppSettings() }
                 if (store.apiKey() == null) Chip("KEY", Amber) { keyDialog = true }
                 Chip(if (speakAloud) "VOICE ON" else "VOICE OFF", if (speakAloud) Green else Grey) { speakAloud = !speakAloud; speech.stop() }
+                Chip(if (showLog) "LOG ▲" else "LOG", if (showLog) Cyan else Grey, filled = showLog) { showLog = !showLog }
                 Chip("SAVE", Blue) { saveConcert() }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -971,8 +973,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            // what was said and done
-            Column(Modifier.fillMaxWidth().heightIn(max = 120.dp).verticalScroll(rememberScrollState()).padding(vertical = 4.dp)) {
+            // what was said and done: one line, the whole list behind the LOG chip (the faders get the room)
+            if (!showLog) { val last = if (heard.isNotBlank()) "… $heard" else log.firstOrNull()
+                if (last != null) Text(last, color = Grey, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().clickable { showLog = true }.padding(vertical = 2.dp)) }
+            else Column(Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState()).padding(vertical = 4.dp)) {
                 if (heard.isNotBlank()) Text("… $heard", color = Cyan, fontSize = 13.sp)
                 log.take(12).forEach {
                     Text(it, color = when { it.startsWith("YOU") -> Grey; it.startsWith("🟠") -> Amber; it.startsWith("  ") -> Green; else -> Text1 }, fontSize = 13.sp)
@@ -1011,39 +1016,54 @@ class MainActivity : ComponentActivity() {
         val onMain = src == 0x38
         val labelsNow by store.labels.collectAsState()
         val sigLv by rta.level.collectAsState()
+        var kdShow by remember { mutableStateOf(false) }
         val sig = sigLv > -80   // no signal: the bars rest at the floor, not at the interpolated share of silence
         // the spectrum as in the lifestyle picture (9.11.2026): rainbow LED bars, colour by frequency (red low, violet high),
         // over a fine grid; the ten octave bands of the desk's RTA drawn as 48 bars, interpolated; the buttons sit in its corners
-        Box(Modifier.fillMaxWidth().height(190.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(12.dp))
+        Box(Modifier.fillMaxWidth().height(270.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(12.dp))
             .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF0C1424), Color(0xFF101A2E))))
             .border(1.dp, Rim, RoundedCornerShape(12.dp))) {
+            val deskBands by recorder.rta.collectAsState()
+            val peaks = remember { FloatArray(31) }
             Canvas(Modifier.fillMaxSize()) {
-                val nb = 48; val w = size.width / nb
+                val nb = 31; val w = size.width / nb
                 val top0 = 34f; val h = size.height - top0 - 4f   // room for the buttons above the bars
-                // fine grid
                 for (i in 0..9) drawRect(Color(0x1AFFFFFF), Offset(0f, top0 + h * i / 9f), Size(size.width, 1f))
-                for (i in 0..nb step 4) drawRect(Color(0x14FFFFFF), Offset(i * w, top0), Size(1f, h))
-                if (on && sig) {
-                    val seg = 7f
-                    for (j in 0 until nb) {
+                for (i in 0..nb step 3) drawRect(Color(0x14FFFFFF), Offset(i * w, top0), Size(1f, h))
+                // the 31 bands as share of the whole (dB, the scale of the Krishna Das line); the phone mic's ten octaves
+                // are interpolated when the desk is not the source
+                val fresh = System.currentTimeMillis() - recorder.rtaAt < 3000 && deskBands != null
+                val share = FloatArray(nb) { j ->
+                    if (fresh) {
+                        val b = deskBands!!; var tot = 0.0
+                        for (k in 0 until 31) if (b[k] > -105) tot += Math.pow(10.0, b[k] / 10.0)
+                        (b[j] - 10 * Math.log10(tot + 1e-12)).toFloat()
+                    } else {
                         val x = j / (nb - 1f) * 9f; val i0 = x.toInt().coerceAtMost(8); val t = x - i0
-                        val db = live[i0] * (1 - t) + live[i0 + 1] * t
-                        val frac = (1.0 - (-db / 45.0)).coerceIn(0.0, 1.0).toFloat()
-                        val col = Color.hsv(j / (nb - 1f) * 285f, 0.85f, 1f)
-                        val n = (frac * h / seg).toInt()
-                        for (k in 0 until n) drawRoundRect(col, Offset(j * w + w * 0.14f, top0 + h - (k + 1) * seg + 1.5f), Size(w * 0.72f, seg - 2.5f),
-                            androidx.compose.ui.geometry.CornerRadius(2f))
+                        (live[i0] * (1 - t) + live[i0 + 1] * t).toFloat()
                     }
                 }
-                if (on) {
-                    if (onMain) {
-                        var px = 0f; var py = 0f
-                        for (i in 0 until 10) {
-                            val cx = (i / 9f) * (size.width - w) + w / 2
-                            val cy = top0 + h * (-Rta.KD[i] / 45.0).toFloat().coerceIn(0f, 1f)
-                            if (i > 0) drawLine(Color.White.copy(alpha = 0.9f), Offset(px, py), Offset(cx, cy), 3f)
-                            drawCircle(Amber, 5f, Offset(cx, cy)); px = cx; py = cy
-                        }
+                val seg = 8f
+                for (j in 0 until nb) {
+                    val col = Color.hsv(j / (nb - 1f) * 285f, 0.85f, 1f)
+                    val live1 = on && sig
+                    val frac = if (live1) (1.0 - (-share[j] / 45.0)).coerceIn(0.0, 1.0).toFloat()
+                               else 0.05f + 0.025f * (1 + Math.sin(j * 0.7).toFloat())     // idle: a low floor, still a rainbow
+                    val n = maxOf(2, (frac * h / seg).toInt())
+                    peaks[j] = if (live1) maxOf(frac, peaks[j] - 0.004f) else 0f
+                    val c = if (live1) col else col.copy(alpha = 0.45f)
+                    for (k in 0 until n) drawRoundRect(c, Offset(j * w + w * 0.12f, top0 + h - (k + 1) * seg + 1.5f), Size(w * 0.76f, seg - 3f),
+                        androidx.compose.ui.geometry.CornerRadius(2.5f))
+                    if (live1 && peaks[j] > frac + 0.02f)
+                        drawRect(Color.White.copy(alpha = 0.7f), Offset(j * w + w * 0.12f, top0 + h - peaks[j] * h), Size(w * 0.76f, 2.5f))
+                }
+                if (on && kdShow) {
+                    var px = 0f; var py = 0f
+                    for (i in 0 until 10) {
+                        val cx = (3 * i + 2) * w + w / 2
+                        val cy = top0 + h * (-Rta.KD[i] / 45.0).toFloat().coerceIn(0f, 1f)
+                        if (i > 0) drawLine(Amber, Offset(px, py), Offset(cx, cy), 2.5f)
+                        px = cx; py = cy
                     }
                 }
             }
@@ -1057,7 +1077,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
             Row(Modifier.align(Alignment.TopEnd).padding(6.dp)) {
-                RtaPill("MATCH KD", if (RTA_DECODED) Amber else Grey, false) {
+                RtaPill("MATCH KD", if (RTA_DECODED) Amber else Grey, kdShow) {
+                    kdShow = !kdShow; if (!kdShow) return@RtaPill
                     if (!RTA_DECODED) { say("Matching to the reference is off. I cannot read the mixer's real-time analyser yet, so I will not mix from a reference."); return@RtaPill }
                     if (System.currentTimeMillis() - recorder.rtaAt > 3000) { say("The mixer's analyser is not streaming. I will not match without it."); return@RtaPill }
                     if (rta.meanLevel() < -60) { say("The main mix is silent, nothing to match."); return@RtaPill }
@@ -1088,7 +1109,7 @@ class MainActivity : ComponentActivity() {
         if (listening && hear.hasKeys()) { RecordBar(); return }
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).border(1.dp, Rim, RoundedCornerShape(8.dp)).background(Panel).padding(10.dp)) {
-                if (text.isEmpty()) Text(if (busy) "Sonnet is working…" else "Tell Sonnet: backing vocal Diana on channel 4…", color = Grey, fontSize = 14.sp)
+                if (text.isEmpty()) Text(if (busy) "Sonnet is working…" else "Tell Sonnet: backing vocal Tajana on channel 4…", color = Grey, fontSize = 14.sp)
                 BasicTextField(text, { text = it }, textStyle = TextStyle(color = Text1, fontSize = 14.sp), cursorBrush = SolidColor(Cyan),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { if (text.isNotBlank()) { command(text.trim(), false); text = "" } }),
@@ -1198,16 +1219,25 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
             if (selected) Box(Modifier.size(10.dp).clip(RoundedCornerShape(5.dp)).background(Color.White.copy(alpha = 0.85f)))
         }
         Spacer(Modifier.height(5.dp))
-        // two small dark buttons: mute and the input's settings (Marko, 8.11.2026: "quickly enter its input settings")
-        Box(Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(8.dp)).background(if (muted) Red else Dark)
-            .border(1.dp, if (muted) Red else Rim, RoundedCornerShape(8.dp)).clickable { onMute() }, contentAlignment = Alignment.Center) {
-            Text(if (muted) "MUTED" else "MUTE", color = if (muted) Color.White else Grey, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        // two small dark rounded squares, as in the picture: M = mute, IN = the input's settings (8.11.2026: "quickly enter its input settings")
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(10.dp)).background(if (muted) Red else Dark)
+                .border(1.dp, if (muted) Red else Rim, RoundedCornerShape(10.dp)).clickable { onMute() }, contentAlignment = Alignment.Center) {
+                Canvas(Modifier.size(20.dp)) {   // a speaker, crossed out when muted
+                    val c = if (muted) Color.White else Grey
+                    val pth = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(0f, size.height * 0.36f); lineTo(size.width * 0.3f, size.height * 0.36f); lineTo(size.width * 0.62f, size.height * 0.1f)
+                        lineTo(size.width * 0.62f, size.height * 0.9f); lineTo(size.width * 0.3f, size.height * 0.64f); lineTo(0f, size.height * 0.64f); close() }
+                    drawPath(pth, c)
+                    if (muted) drawLine(c, Offset(size.width * 0.7f, size.height * 0.2f), Offset(size.width, size.height * 0.8f), 3f)
+                    else { drawArc(c, -40f, 80f, false, Offset(size.width * 0.55f, size.height * 0.25f), Size(size.width * 0.4f, size.height * 0.5f), style = androidx.compose.ui.graphics.drawscope.Stroke(3f)) }
+                }
+            }
+            if (onInput != null) Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(10.dp)).background(Dark)
+                .border(1.dp, Rim, RoundedCornerShape(10.dp)).clickable { onInput() }, contentAlignment = Alignment.Center) {
+                Text("IN", color = Cyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            } else Spacer(Modifier.weight(1f))
         }
-        Spacer(Modifier.height(4.dp))
-        if (onInput != null) Box(Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(8.dp)).background(Dark)
-            .border(1.dp, Rim, RoundedCornerShape(8.dp)).clickable { onInput() }, contentAlignment = Alignment.Center) {
-            Text("IN", color = Cyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-        } else Spacer(Modifier.height(42.dp))
         if (pan != null) {
             Canvas(Modifier.fillMaxWidth().height(30.dp).pointerInput(Unit) {
                 detectTapGestures(onDoubleTap = { setPan(0.0) })
@@ -1240,9 +1270,9 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
             val cr = androidx.compose.ui.geometry.CornerRadius(7f)
             // the scale ticks either side of the groove, 0 mark brighter
             val zero = size.height * (1f - Cq.dbToValue(0.0) / maxV)
-            for (i in 0..20) { val ty = size.height * i / 20f; drawRect(Rim, Offset(cx - 22, ty), Size(5f, 2f)); drawRect(Rim, Offset(cx + 17, ty), Size(5f, 2f)) }
-            drawRect(Grey, Offset(cx - 26, zero - 1), Size(10f, 2f)); drawRect(Grey, Offset(cx + 16, zero - 1), Size(10f, 2f))
-            drawRoundRect(Dark, Offset(cx - 7, 0f), Size(14f, size.height), cr)
+            for (i in 0..20) { val ty = size.height * i / 20f; drawRect(Rim, Offset(cx - 28, ty), Size(5f, 2f)); drawRect(Rim, Offset(cx + 23, ty), Size(5f, 2f)) }
+            drawRect(Grey, Offset(cx - 32, zero - 1), Size(10f, 2f)); drawRect(Grey, Offset(cx + 22, zero - 1), Size(10f, 2f))
+            drawRoundRect(Dark, Offset(cx - 14, 0f), Size(28f, size.height), cr)
             // the desk's meter inside the groove, on the fader's own scale; cyan, green, yellow over +6, red over +15
             fun frac(d: Double) = 1f - Cq.dbToValue(d.coerceIn(-85.0, Cq.MAX_DB)) / maxV
             val grad = androidx.compose.ui.graphics.Brush.verticalGradient(
@@ -1254,10 +1284,10 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
                 val t = size.height * frac(d.toDouble())
                 drawRoundRect(grad, Offset(x, t), Size(w, size.height - t), androidx.compose.ui.geometry.CornerRadius(w / 2))
             }
-            if (meter2 == null) bar(meter, cx - 4.5f, 9f) else { bar(meter, cx - 5.5f, 5f); bar(meter2, cx + 0.5f, 5f) }
+            if (meter2 == null) bar(meter, cx - 11f, 22f) else { bar(meter, cx - 12f, 11f); bar(meter2, cx + 1f, 11f) }
             // the light cap
             val y = size.height * (1f - pos)
-            val cw = size.width * 0.82f; val ch = 30f
+            val cw = size.width * 0.8f; val ch = 34f
             drawRoundRect(Color(0x66000000), Offset(cx - cw / 2 + 1, y - ch / 2 + 3), Size(cw, ch), androidx.compose.ui.geometry.CornerRadius(6f))
             drawRoundRect(if (muted) Color(0xFFFCA5A5) else Cap, Offset(cx - cw / 2, y - ch / 2), Size(cw, ch), androidx.compose.ui.geometry.CornerRadius(6f))
             drawRect(Color(0xFF6B7488), Offset(cx - cw / 2 + 6, y - 1f), Size(cw - 12, 2f))

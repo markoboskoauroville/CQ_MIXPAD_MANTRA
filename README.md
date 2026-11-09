@@ -14,7 +14,7 @@ finds the mixer by itself on the cable's subnet (port 51325) and remembers the a
   pan (on MAIN), the person's name and the channel's role. Mix tabs MAIN, OUT1–6 (monitor sends), FX1–2 (effect sends);
   the mix master and DCA1–4. Every move on the desk or in CQ MixPad shows up here (the CQ reports changes).
 - **Sonnet 5.5** (`claude-sonnet-5-5`, official anthropic-java SDK, server-side refusal fallback on): the line at the
-  bottom (type) or SPEAK (voice). "Backing vocal Diana on channel 4" → the channel shows *Diana*, the role *backing vocal*
+  bottom (type) or SPEAK (voice). "Backing vocal Tajana on channel 4" → the channel shows *Tajana*, the role *backing vocal*
   decides how it is mixed. Commands are carried out at once, with limits in the code: no more than +6 dB at once.
 - **RTA**: the phone's microphone, ten octave bands, each band's share of the whole: the measure of
   SANTOSHI_CONCERT_MIX `compare_ref.py`. Amber bars = the Krishna Das references, cyan = the room, numbers under = room
