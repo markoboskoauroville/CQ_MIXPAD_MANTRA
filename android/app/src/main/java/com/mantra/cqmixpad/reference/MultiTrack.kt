@@ -126,6 +126,33 @@ class MultiTrack(
             finally { runCatching { r.stop() }; r.release() }
             break
         }
+        // 9.11.2026: every request above opened but read exact zeros from the CQ: try the other capture sources (the
+        // Pixel routes USB capture through its AoC DSP; the source picks the DSP path), stereo mask, both encodings
+        val sources = listOf(MediaRecorder.AudioSource.UNPROCESSED to "UNPROCESSED", MediaRecorder.AudioSource.MIC to "MIC",
+            MediaRecorder.AudioSource.VOICE_RECOGNITION to "VOICE_RECOGNITION", MediaRecorder.AudioSource.CAMCORDER to "CAMCORDER",
+            MediaRecorder.AudioSource.DEFAULT to "DEFAULT", MediaRecorder.AudioSource.VOICE_PERFORMANCE to "VOICE_PERFORMANCE")
+        for ((src, sn) in sources) for (enc in listOf(AudioFormat.ENCODING_PCM_16BIT, AudioFormat.ENCODING_PCM_FLOAT)) {
+            val r = try {
+                val f = AudioFormat.Builder().setSampleRate(48000).setEncoding(enc).setChannelMask(AudioFormat.CHANNEL_IN_STEREO).build()
+                AudioRecord.Builder().setAudioSource(src).setAudioFormat(f).setBufferSizeInBytes(48000 * 2 * 4 / 5).build()
+            } catch (e: Exception) { sb.append("  $sn ${encName(enc)}: refused\n"); null } ?: continue
+            if (r.state != AudioRecord.STATE_INITIALIZED) { r.release(); sb.append("  $sn ${encName(enc)}: not initialised\n"); continue }
+            r.setPreferredDevice(dev)
+            try {
+                r.startRecording(); Thread.sleep(300)
+                val n = r.channelCount; val buf = FloatArray(4800 * n); val sbuf = ShortArray(4800 * n)
+                val sq = DoubleArray(n); var frames = 0; var nonzero = 0
+                repeat(5) {
+                    val got = if (enc == AudioFormat.ENCODING_PCM_FLOAT) r.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
+                              else r.read(sbuf, 0, sbuf.size).also { g -> for (i in 0 until maxOf(g, 0)) buf[i] = sbuf[i] / 32768f }
+                    for (i in 0 until maxOf(got, 0)) { val v = buf[i].toDouble(); if (v != 0.0) nonzero++; sq[i % n] += v * v }
+                    frames += maxOf(got, 0) / n
+                }
+                sb.append("  $sn stereo ${encName(enc)}: on ${r.routedDevice?.productName}, non-zero samples $nonzero, RMS dB ")
+                sb.append(sq.joinToString(" ") { String.format(Locale.US, "%.0f", 10 * log10(it / maxOf(frames, 1) + 1e-12)) }).append('\n')
+            } catch (e: Exception) { sb.append("  $sn ${encName(enc)}: ${e.javaClass.simpleName}\n") }
+            finally { runCatching { r.stop() }; r.release() }
+        }
         probeText.value = sb.toString(); log("  PROBE: " + sb.toString().replace('\n', ' '))
         return sb.toString()
     }
