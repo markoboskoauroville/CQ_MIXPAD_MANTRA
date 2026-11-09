@@ -142,3 +142,6 @@
 ## 9.11.2026 (background session: new look from the lifestyle picture)
 "Please take a look at the lifestyle image for our application to control the CQ mixer. I want the interface like this. It's better than what we did ... build it overnight."
 "you are rebuilding the user interface for CQ MixPad Mantra, so you need a phone" (the Pixel 7 is turned on for the tests) / "CQ is also in the network, ready to be tested and used."
+
+## 9.11.2026 (background session, task 54: reference profiles)
+"You need the ability to transfer audio or music somehow from the mixer to the phone, to analyze its profile and compare it with Krishna Das or any other reference. And add to our mixer app 'load reference': I load any MP3, WAV file, whatever I have, and you mix it in the way of that reference file."
