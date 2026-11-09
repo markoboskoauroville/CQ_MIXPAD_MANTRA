@@ -101,6 +101,9 @@ private const val RTA_DECODED = true   // the desk's RTA, decoded 7.11.2026 (Rec
 private val RecRed = Color(0xFFEF4444)    // TTT's recording red
 /** Strip width: wide enough for a thumb (Marko, 8.11.2026: "adapted to the fat finger"). */
 private val STRIP_W = 80.dp
+/** The corner the UI button owns: 16 dp margin + 56 dp button (less the screen padding of the layout that reserves it). */
+private val UI_RESERVE_MA = 64.dp
+private val UI_RESERVE_FULL = 72.dp
 /** The picture's channel colour buttons (9.11.2026): pink, orange, yellow, green, cyan, light blue, violet, mint. The desk's own
  *  channel colours are not read (PROTOCOL.md: colour is a write-only 7F 07 message so far), so a fixed palette by channel. */
 private val ChPalette = listOf(Color(0xFFF472B6), Color(0xFFFB923C), Color(0xFFFACC15), Color(0xFF4ADE80),
@@ -133,6 +136,9 @@ class MainActivity : ComponentActivity() {
     private var busy by mutableStateOf(false)
     private var heard by mutableStateOf("")
     private var uiMode by mutableStateOf("cq")
+    private var showLog by mutableStateOf(false)
+    private var keyDialog by mutableStateOf(false)
+    private var concertDialog by mutableStateOf(false)
     private var speakAloud by mutableStateOf(true)
     private var micOk by mutableStateOf(false)
     private var rtaOn by mutableStateOf(false)
@@ -226,7 +232,10 @@ class MainActivity : ComponentActivity() {
             }
         }
         uiMode = getSharedPreferences("view", MODE_PRIVATE).getString("uiMode", "cq") ?: "cq"
-        setContent { ZoomPan { if (uiMode == "cq") CqScreen() else Screen() } }
+        setContent { ZoomPan { Box(Modifier.fillMaxSize()) {
+            when (uiMode) { "cq" -> CqScreen(); "s1" -> S1Screen(); else -> Screen() }
+            UiButton(Modifier.align(Alignment.TopEnd))
+        } } }
     }
 
     override fun onResume() {
@@ -838,6 +847,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** ONE button, upper right, the same size and place in every layout (Marko, 9.11.2026): the 2 letters of the mode you are in; a tap goes to the next. */
+    @Composable
+    private fun UiButton(modifier: Modifier) {
+        val label = when (uiMode) { "cq" -> "CQ"; "s1" -> "S1"; else -> "MA" }
+        Box(modifier.windowInsetsPadding(WindowInsets.safeDrawing).padding(top = 4.dp, end = 16.dp).size(56.dp).clip(RoundedCornerShape(12.dp))
+            .background(Color(0xFF0E2A33)).border(2.dp, Cyan, RoundedCornerShape(12.dp))
+            .clickable { chooseUi(when (uiMode) { "cq" -> "mantra"; "mantra" -> "s1"; else -> "cq" }) }, contentAlignment = Alignment.Center) {
+            Text(label, color = Cyan, fontSize = 22.sp, fontWeight = FontWeight.Black)
+        }
+    }
+
     private fun chooseUi(m: String) { uiMode = m; getSharedPreferences("view", MODE_PRIVATE).edit().putString("uiMode", m).apply() }
 
     @Composable
@@ -866,7 +886,8 @@ class MainActivity : ComponentActivity() {
         Box(Modifier.fillMaxSize().background(CqBg).windowInsetsPadding(WindowInsets.safeDrawing)) {
           Column(Modifier.fillMaxSize()) {
             // the top bar: the power button (here: our AI panel), the five tabs, the status icons
-            Row(Modifier.fillMaxWidth().height(48.dp).background(CqBar), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().height(64.dp).background(CqBar), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.padding(start = 8.dp, end = 4.dp).size(10.dp).clip(RoundedCornerShape(5.dp)).background(if (connected) CqTeal else Red))
                 Box(Modifier.width(56.dp).fillMaxHeight().clickable { aiOpen = !aiOpen }, contentAlignment = Alignment.Center) {
                     Canvas(Modifier.size(24.dp)) {
                         drawArc(if (aiOpen) CqTeal else CqDim, -60f, 300f, false, Offset(3f, 5f), Size(size.width - 6, size.height - 6), style = androidx.compose.ui.graphics.drawscope.Stroke(3.5f))
@@ -877,11 +898,12 @@ class MainActivity : ComponentActivity() {
                     .background(if (tab == t) Color(0xFF1B2120) else CqBar).clickable { tab = t }, contentAlignment = Alignment.Center) {
                     Text(t, color = if (tab == t) CqTeal else CqText, fontSize = if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 500) 9.sp else 12.sp, maxLines = 1, softWrap = false)
                 }
-                Box(Modifier.padding(horizontal = 8.dp).size(10.dp).clip(RoundedCornerShape(5.dp)).background(if (connected) CqTeal else Red))
-                Box(Modifier.padding(end = 6.dp).height(34.dp).clip(RoundedCornerShape(3.dp)).border(1.dp, CqLine, RoundedCornerShape(3.dp))
-                    .clickable { chooseUi("mantra") }.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
-                    Text("MANTRA", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600) {
+                    Chip(if (speakAloud) "VOICE ON" else "VOICE OFF", if (speakAloud) Green else Grey) { speakAloud = !speakAloud; speech.stop() }
+                    Chip(if (showLog) "LOG ▲" else "LOG", if (showLog) Cyan else Grey, filled = showLog) { aiOpen = true; showLog = !showLog }
+                    Chip("SAVE", Blue) { saveConcert() }
                 }
+                Spacer(Modifier.width(UI_RESERVE_FULL))
             }
             Row(Modifier.weight(1f).fillMaxWidth()) {
                 // the left column: soft keys 1-3, Custom, the five layers with their little meters
@@ -917,7 +939,7 @@ class MainActivity : ComponentActivity() {
                         "FADER" -> CqStripRow(strips, processing = false, sel = sel, onSel = { sel = it }, meterOf = { meterOf(it) })
                         "PROCESSING" -> CqStripRow(strips, processing = true, sel = sel, onSel = { sel = it }, meterOf = { meterOf(it) })
                         "HOME" -> CqHome(sub, { sub = it }, concert)
-                        "FX" -> CqNote("FX", listOf("INPUTS", "CONTROL", "PEQ", "OUTPUTS"), "The FX units (easyVERB, echoVERB, Chorus, Double Tracker) are on the FX1 / FX2 sends here: open MANTRA and its FX1 / FX2 tabs. Their editors are not drawn yet.")
+                        "FX" -> CqNote("FX", listOf("INPUTS", "CONTROL", "PEQ", "OUTPUTS"), "The FX units (easyVERB, echoVERB, Chorus, Double Tracker) are on the FX1 / FX2 sends here: press the big button for MA and open its FX1 / FX2 tabs. Their editors are not drawn yet.")
                         else -> CqNote("CONFIG", listOf("INPUTS", "OUTPUTS", "AMM", "CONTROL & NETWORK"), "Input sources, output setup and network are set on the desk or in the original CQ MixPad; here only the input page (the IN buttons on PROCESSING) is ours.")
                     }
                 }
@@ -950,6 +972,8 @@ class MainActivity : ComponentActivity() {
               }
               CommandBar()
           }
+          if (keyDialog) KeyDialog { keyDialog = false }
+          if (concertDialog) ConcertDialog { concertDialog = false }
           if (confirmStop) Box(Modifier.fillMaxSize().background(Color(0xCC000000)), contentAlignment = Alignment.Center) {
               Column(Modifier.fillMaxWidth(0.6f).clip(RoundedCornerShape(10.dp)).background(Panel).padding(16.dp)) {
                   Text("Stop the concert recording?", color = Text1, fontWeight = FontWeight.Bold, fontSize = 17.sp)
@@ -1062,7 +1086,7 @@ class MainActivity : ComponentActivity() {
                     Text("CQ MixPad (Mantra) ${BuildConfig.VERSION_NAME}", color = CqText, fontSize = 14.sp)
                     Text(link.status.value, color = CqDim, fontSize = 12.sp)
                     Spacer(Modifier.height(10.dp))
-                    CqButton("USER INTERFACE: CQ  (tap for MANTRA)", Modifier.fillMaxWidth(0.8f).height(46.dp)) { chooseUi("mantra") }
+                    Text("The big button in the upper right switches CQ / MA / S1.", color = CqDim, fontSize = 12.sp)
                 }
                 "DATA" -> Column(Modifier.weight(1f).padding(14.dp)) {
                     Text("Shows and libraries live on the desk's USB stick; use the original CQ MixPad for them.", color = CqDim, fontSize = 12.sp)
@@ -1085,8 +1109,133 @@ class MainActivity : ComponentActivity() {
             Row(Modifier.fillMaxWidth().height(36.dp)) { for (t in subs) Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) { Text(t, color = CqDim, fontSize = 12.sp) } }
             Box(Modifier.fillMaxSize().padding(16.dp).border(1.dp, CqTeal, RoundedCornerShape(4.dp)).padding(16.dp)) {
                 Column { Text(title, color = CqTeal, fontSize = 15.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(text, color = CqText, fontSize = 13.sp)
-                    Spacer(Modifier.height(12.dp)); CqButton("OPEN MANTRA MODE", Modifier.width(220.dp).height(44.dp)) { chooseUi("mantra") } }
+                    Spacer(Modifier.height(12.dp)); Text("MA (the big button, upper right) has it.", color = CqDim, fontSize = 12.sp) }
             }
+        }
+    }
+
+    // ---------- the S1 interface (9.11.2026): the Studio One remote's mix page look, our own drawing ----------
+
+    @Composable
+    private fun S1Screen() {
+        val tick by link.tick.collectAsState()
+        val present by link.present.collectAsState()
+        val labels by store.labels.collectAsState()
+        val concert by store.current.collectAsState()
+        var view by remember { mutableStateOf("Fader") }
+        var layer by remember { mutableStateOf("IN 1-8") }
+        var aiOpen by remember { mutableStateOf(false) }
+        val inM by recorder.inMeters.collectAsState()
+        val outM by recorder.outMeters.collectAsState()
+        val metersOn = recorder.metersAlive()
+        val rtaSrc by recorder.rtaSource.collectAsState()
+        tick.hashCode(); viewTick.hashCode()
+        val strips = cqLayerStrips(layer, present, labels)
+        fun meterOf(s: CqS): Float? = if (!metersOn) null else when {
+            s.meterKey >= 0 -> inM[s.meterKey]
+            s.meterKey == -2 -> outM[6]
+            s.sub.startsWith("OUT") -> s.sub.removePrefix("OUT").toIntOrNull()?.let { outM[it - 1] }
+            else -> null
+        }
+        Box(Modifier.fillMaxSize()) {
+          Column(Modifier.fillMaxSize().background(S1Bg).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp)) {
+            MaHeader()
+            Row(Modifier.weight(1f).fillMaxWidth()) {
+                // the left rail: the views, then the layers (like Fader / Inserts / Sends / Cue mix and Channels / Inputs / Outputs)
+                Column(Modifier.width(86.dp).fillMaxHeight().padding(end = 4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    for (v in listOf("Fader", "Process", "RTA", "AI")) Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(3.dp))
+                        .background(if (view == v && v != "AI") S1Blue else S1Rail).clickable { if (v == "AI") aiOpen = !aiOpen else view = v }, contentAlignment = Alignment.Center) {
+                        Text(v, color = Color.White, fontSize = 13.sp, maxLines = 1)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    for (l in listOf("IN 1-8", "IN 9-16", "ST.IN/FX", "OUTPUTS", "MGRP/DCA", "Custom")) Box(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(3.dp))
+                        .background(if (layer == l) S1Blue else S1Rail).clickable { layer = l }, contentAlignment = Alignment.Center) {
+                        Text(l, color = Color.White, fontSize = 11.sp, maxLines = 1)
+                    }
+                }
+                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    if (view == "RTA") RtaStrip()
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        val chosen = inputCh
+                        if (chosen != null) Column(Modifier.fillMaxSize().padding(8.dp)) { InputPanel(Modifier.weight(1f), chosen) }
+                        else if (view == "Process") CqStripRow(strips, processing = true, sel = null, onSel = {}, meterOf = { meterOf(it) })
+                        else androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+                            val sw: Dp = if (maxWidth > maxHeight) maxOf(maxWidth / 8, 76.dp) else maxOf(maxWidth / 4, 84.dp)
+                            Row(Modifier.fillMaxSize().horizontalScroll(rememberScrollState())) {
+                                strips.forEach { s ->
+                                    val col = if (s.tint) Color(0xFFA78BFA) else if (s.meterKey == -2) Color(0xFF8E959D) else chColor(s.ip ?: s.name.hashCode())
+                                    val muted = s.mute?.let { link.muted(it) } ?: false
+                                    val rtaOn = s.ip != null && rtaSrc == s.ip
+                                    Column(Modifier.width(sw).fillMaxHeight().padding(horizontal = 1.5.dp).clip(RoundedCornerShape(4.dp)).background(col.copy(alpha = 0.22f)),
+                                        horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Box(Modifier.fillMaxWidth().height(5.dp).background(col))
+                                        // the pan bar
+                                        val pp = s.pan
+                                        val pan = pp?.let { link.values[it]?.let { v -> Cq.valueToPan(v) } } ?: 0.0
+                                        Box(Modifier.padding(vertical = 4.dp).fillMaxWidth(0.9f).height(26.dp).clip(RoundedCornerShape(3.dp)).background(Color(0xFF0D0F11)).pointerInput(s.name) {
+                                            if (pp != null) detectTapGestures(onDoubleTap = { link.setPan(pp, 0.0) })
+                                        }.pointerInput(s.name) {
+                                            if (pp != null) { var start = 0.0; var acc = 0f
+                                                detectHorizontalDragGestures(onDragStart = { start = link.values[pp]?.let { v -> Cq.valueToPan(v) } ?: 0.0; acc = 0f }) { _, dx ->
+                                                    acc += dx; link.setPan(pp, (start + acc / size.width * 200).coerceIn(-100.0, 100.0)) } }
+                                        }, contentAlignment = Alignment.Center) {
+                                            Text(if (pp == null) "" else if (Math.abs(pan) < 1) "<C>" else if (pan < 0) "L${(-pan).toInt()}" else "R${pan.toInt()}", color = CqText, fontSize = 11.sp)
+                                        }
+                                        // M = mute, S = this channel on the RTA (our solo), IN = the input's settings
+                                        Row(Modifier.fillMaxWidth(0.94f).height(46.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(4.dp)).background(if (muted) Red else Color(0xFF3A3F45))
+                                                .clickable { s.mute?.let { m -> link.setMute(m, !muted) } }, contentAlignment = Alignment.Center) { Text("M", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                                            Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(4.dp)).background(if (rtaOn) Color(0xFFFFB020) else Color(0xFF3A3F45))
+                                                .clickable { if (s.ip != null) showOnRta(if (rtaOn) 0x38 else s.ip) }, contentAlignment = Alignment.Center) { Text("S", color = if (rtaOn) Color.Black else Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+                                        }
+                                        Spacer(Modifier.height(3.dp))
+                                        Box(Modifier.fillMaxWidth(0.94f).height(40.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF3A3F45))
+                                            .clickable { s.ip?.let { openInput(it) } }, contentAlignment = Alignment.Center) { Text(if (s.ip != null) "IN" else "·", color = Cyan, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                                        Text(if (s.p != null) Cq.dbText(link.db(s.p)) else "", color = if (muted) Color(0xFFE5534B) else Color.White, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp))
+                                        if (s.p != null) S1Fader(link.db(s.p), muted, meterOf(s), { link.setDb(s.p, it) }, Modifier.weight(1f).fillMaxWidth())
+                                        else Spacer(Modifier.weight(1f))
+                                        // the name tab in the channel colour
+                                        Box(Modifier.fillMaxWidth().height(34.dp).background(col), contentAlignment = Alignment.Center) {
+                                            Text(s.name, color = Color(0xFF101214), fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 2.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Main LR at the right, like the master strip
+                val mp = Cq.masterParam("MAIN")
+                if (mp != null) Column(Modifier.width(86.dp).fillMaxHeight().padding(start = 4.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF2A2E33)), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.fillMaxWidth().height(5.dp).background(Color(0xFF8E959D)))
+                    Text("-∞ / " + Cq.dbText(link.db(mp)), color = Color.White, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp))
+                    S1Fader(link.db(mp), Cq.masterMuteParam("MAIN")?.let { link.muted(it) } ?: false, if (metersOn) outM[6] else null, { link.setDb(mp, it) }, Modifier.weight(1f).fillMaxWidth())
+                    Box(Modifier.fillMaxWidth().height(34.dp).background(Color(0xFF8E959D)), contentAlignment = Alignment.Center) { Text("Main", color = Color(0xFF101214), fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                }
+            }
+            // the bottom bar (the remote's transport bar): our recorder and the concert
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Chip(concert?.let { "${it.venue} · ${it.date}" } ?: "CONCERT", Amber, filled = true) { concertDialog = true }
+                RecChip()
+            }
+          }
+          if (aiOpen) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.72f).background(Color(0xF2181C1C)).border(1.dp, S1Blue)
+              .padding(8.dp).windowInsetsPadding(WindowInsets.ime)) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                  Text("AI  ·  RTA  ·  RECORDER", color = Cyan, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                  Chip("CLOSE", Grey) { aiOpen = false }
+              }
+              Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                  RtaStrip(); PendingPanel()
+                  Column(Modifier.fillMaxWidth().heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
+                      if (heard.isNotBlank()) Text("… $heard", color = Cyan, fontSize = 13.sp)
+                      log.take(12).forEach { Text(it, color = when { it.startsWith("YOU") -> Grey; it.startsWith("🟠") -> Amber; it.startsWith("  ") -> Green; else -> Text1 }, fontSize = 13.sp) }
+                  }
+              }
+              CommandBar()
+          }
+          if (keyDialog) KeyDialog { keyDialog = false }
+          if (concertDialog) ConcertDialog { concertDialog = false }
         }
     }
 
@@ -1138,22 +1287,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** The header all MANTRA-style screens share: connection dot + status, KEY, VOICE, LOG, SAVE; the upper-right corner is the UI button's. */
     @Composable
-    private fun Screen() {
-        val tick by link.tick.collectAsState()
+    private fun MaHeader() {
         val status by link.status.collectAsState()
         val connected by link.connected.collectAsState()
-        val present by link.present.collectAsState()
-        val labels by store.labels.collectAsState()
-        var mix by remember { mutableStateOf("MAIN") }
-        var keyDialog by remember { mutableStateOf(false) }
-        var showLog by remember { mutableStateOf(false) }
-        var concertDialog by remember { mutableStateOf(false) }
-        val concert by store.current.collectAsState()
-        tick.hashCode()
-
-        Column(Modifier.fillMaxSize().background(Bg).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp).imePadding()) {
-            // top bar
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.width(10.dp).height(10.dp).clip(RoundedCornerShape(5.dp)).background(if (connected) Green else Red))
                 Spacer(Modifier.width(8.dp))
@@ -1169,10 +1307,25 @@ class MainActivity : ComponentActivity() {
                 if (!micOk) Chip("PERMISSIONS", Amber) { openAppSettings() }
                 if (store.apiKey() == null) Chip("KEY", Amber) { keyDialog = true }
                 Chip(if (speakAloud) "VOICE ON" else "VOICE OFF", if (speakAloud) Green else Grey) { speakAloud = !speakAloud; speech.stop() }
-                Chip("CQ", Cyan) { chooseUi("cq") }
                 Chip(if (showLog) "LOG ▲" else "LOG", if (showLog) Cyan else Grey, filled = showLog) { showLog = !showLog }
                 Chip("SAVE", Blue) { saveConcert() }
+                Spacer(Modifier.width(UI_RESERVE_MA))
             }
+    }
+
+    @Composable
+    private fun Screen() {
+        val tick by link.tick.collectAsState()
+        val status by link.status.collectAsState()
+        val connected by link.connected.collectAsState()
+        val present by link.present.collectAsState()
+        val labels by store.labels.collectAsState()
+        var mix by remember { mutableStateOf("MAIN") }
+        val concert by store.current.collectAsState()
+        tick.hashCode()
+
+        Column(Modifier.fillMaxSize().background(Bg).windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 8.dp).imePadding()) {
+            MaHeader()
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Chip(concert?.let { "${it.venue} · ${it.date}" } ?: "CONCERT", Amber, filled = true) { concertDialog = true }
                 RecChip()

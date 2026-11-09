@@ -109,3 +109,46 @@ internal fun CqKnob(frac: Float, modifier: Modifier = Modifier, color: Color = C
             Offset(c.x + (r * 0.8f * Math.cos(a)).toFloat(), c.y + (r * 0.8f * Math.sin(a)).toFloat()), 4f)
     }
 }
+
+/** S1 (the third look, 9.11.2026, after the Studio One remote's mix page): palette and the fader with its meter in a column of its own. */
+internal val S1Bg = Color(0xFF1D2024)
+internal val S1Rail = Color(0xFF2A2E33)
+internal val S1Blue = Color(0xFF0A74DA)
+internal val S1Cap = Color(0xFFF1F3F5)
+
+@Composable
+internal fun S1Fader(db: Double, muted: Boolean, meter: Float?, onDb: (Double) -> Unit, modifier: Modifier = Modifier) {
+    val maxV = Cq.dbToValue(Cq.MAX_DB).toFloat()
+    val setDb by rememberUpdatedState(onDb)
+    val curDb by rememberUpdatedState(db)
+    val pos = (Cq.dbToValue(db) / maxV).coerceIn(0f, 1f)
+    Canvas(modifier.pointerInput(Unit) {
+        var start = 0f; var acc = 0f
+        detectVerticalDragGestures(onDragStart = { start = Cq.dbToValue(curDb) / maxV; acc = 0f }) { _, dy ->
+            acc += dy
+            setDb(Cq.valueToDb(((start - acc / size.height).coerceIn(0f, 1f) * maxV).toInt()))
+        }
+    }.pointerInput(Unit) { detectTapGestures(onDoubleTap = { setDb(0.0) }) }) {
+        fun frac(d: Double) = 1f - Cq.dbToValue(d.coerceIn(-85.0, Cq.MAX_DB)) / maxV
+        val pad = 22f; val h = size.height - 2 * pad
+        fun yOf(f: Float) = pad + h * f
+        val paint = android.graphics.Paint().apply { color = 0xFF9AA2AB.toInt(); textSize = 20f; isAntiAlias = true }
+        val mx = size.width * 0.12f; val mw = size.width * 0.2f          // the meter column
+        val gx = size.width * 0.62f                                       // the groove
+        drawRect(Color(0xFF0D0F11), Offset(mx, pad), Size(mw, h))
+        if (meter != null && meter > -85f) {
+            val t = yOf(frac(meter.toDouble()))
+            drawRect(androidx.compose.ui.graphics.Brush.verticalGradient(0f to Color(0xFFEF4444), 0.15f to Color(0xFFFACC15), 0.4f to Color(0xFF4ADE80), 1f to Color(0xFF22A06B), startY = pad, endY = pad + h),
+                Offset(mx, t), Size(mw, pad + h - t))
+        }
+        for ((d, s) in listOf(10.0 to "10", 0.0 to "0", -10.0 to "-10", -20.0 to "-20", -40.0 to "-40", -85.0 to "-∞")) {
+            val y = yOf(frac(d))
+            drawContext.canvas.nativeCanvas.drawText(s, mx + mw + 4f, y + 7f, paint)
+        }
+        drawRect(Color(0xFF0D0F11), Offset(gx - 3f, pad), Size(6f, h))
+        val y = yOf(1f - pos)
+        val cw = size.width * 0.34f; val ch = 52f
+        drawRoundRect(if (muted) Color(0xFFE29A9A) else S1Cap, Offset(gx - cw / 2, y - ch / 2), Size(cw, ch), CornerRadius(7f))
+        drawRect(Color(0xFF3A3F45), Offset(gx - cw / 2 + 5, y - 1.5f), Size(cw - 10, 3f))
+    }
+}
