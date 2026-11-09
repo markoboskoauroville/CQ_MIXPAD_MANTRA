@@ -977,27 +977,27 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.padding(top = 6.dp).clickable { onSel(if (selected) null else i) })
                         // the headphone button: here it puts this channel on the RTA (our PFL)
                         val rtaOn = s.ip != null && rtaSrc == s.ip
-                        CqButton(if (rtaOn) "RTA" else "PFL", Modifier.padding(vertical = 4.dp).fillMaxWidth(0.8f).height(36.dp), on = rtaOn) {
+                        CqButton(if (rtaOn) "RTA" else "PFL", Modifier.padding(vertical = if (processing) 2.dp else 4.dp).fillMaxWidth(0.8f).height(if (processing) 28.dp else 36.dp), on = rtaOn) {
                             if (s.ip != null) showOnRta(if (rtaOn) 0x38 else s.ip)
                         }
                         if (processing) {
                             val ch = s.ip
                             // gain block: knob, value, the AFV/AG/HPF/AMM tags; a tap opens the input's settings
-                            Row(Modifier.fillMaxWidth().height(64.dp).background(Color(0xFF1C2120)).clickable { if (ch != null) openInput(ch) }.padding(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth().height(50.dp).background(Color(0xFF1C2120)).clickable { if (ch != null) openInput(ch) }.padding(2.dp), verticalAlignment = Alignment.CenterVertically) {
                                 val g = ch?.let { recorder.gainNow(it) }
                                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                                    CqKnob(((g ?: 0.0).toFloat() + 5f) / 60f, Modifier.size(34.dp))
+                                    CqKnob(((g ?: 0.0).toFloat() + 5f) / 60f, Modifier.size(28.dp))
                                     Text(g?.let { String.format(Locale.US, "%.0f dB", it) } ?: "0 dB", color = CqText, fontSize = 11.sp)
                                 }
                             }
-                            CqButton("GATE", Modifier.padding(top = 3.dp).fillMaxWidth().height(34.dp)) { if (ch != null) openInput(ch) }
-                            Spacer(Modifier.height(34.dp))
-                            Box(Modifier.fillMaxWidth().height(34.dp).background(Color(0xFF1C2120)).clickable { if (ch != null) openInput(ch) }, contentAlignment = Alignment.Center) {
+                            CqButton("GATE", Modifier.padding(top = 2.dp).fillMaxWidth().height(26.dp)) { if (ch != null) openInput(ch) }
+                            Spacer(Modifier.height(4.dp))
+                            Box(Modifier.fillMaxWidth().height(24.dp).background(Color(0xFF1C2120)).clickable { if (ch != null) openInput(ch) }, contentAlignment = Alignment.Center) {
                                 val on = ch != null && recorder.peqNow(ch, 0) != null
                                 Text("—PEQ—", color = CqPeq, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
                             // the EQ curve from the four bands, drawn flat when unknown
-                            Canvas(Modifier.fillMaxWidth().height(40.dp).clickable { if (ch != null) openInput(ch) }) {
+                            Canvas(Modifier.fillMaxWidth().height(26.dp).clickable { if (ch != null) openInput(ch) }) {
                                 val pts = (0 until 4).map { b -> (ch?.let { recorder.peqNow(it, b) } ?: 0.0).toFloat().coerceIn(-15f, 15f) }
                                 val path = androidx.compose.ui.graphics.Path()
                                 for (x in 0..20) {
@@ -1007,10 +1007,9 @@ class MainActivity : ComponentActivity() {
                                 }
                                 drawPath(path, Color(0xFFB9C0BF), style = androidx.compose.ui.graphics.drawscope.Stroke(3f))
                             }
-                            Box(Modifier.fillMaxWidth().height(40.dp).background(Color(0xFF1C2120)), contentAlignment = Alignment.TopCenter) {
-                                Text("SENDS", color = CqText, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                            Box(Modifier.fillMaxWidth().height(22.dp).background(Color(0xFF1C2120)), contentAlignment = Alignment.Center) {
+                                Text("SENDS", color = CqText, fontSize = 11.sp)
                             }
-                            Text(s.name, color = CqText, fontSize = 12.sp, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
                         } else {
                             // the pan bar: L .. R, a drag moves it, double tap centres it
                             val pp = s.pan
