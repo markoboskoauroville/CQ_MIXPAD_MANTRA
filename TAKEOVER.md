@@ -3,6 +3,12 @@
 **Update 9.11.2026, v44: THREE LAYOUTS, ONE BUTTON.** The big button upper right (56 dp, 16 dp from the edge, inside system bars) shows the 2 letters of the layout you are in and cycles CQ -> MA -> S1 -> CQ; the old MANTRA chip / CQ chip / settings entries are gone. **Rule (Marko, 9.11.2026): same function, same place, in every layout.** Shared and now in the same place in all three: the UI button, the connection dot (far left), VOICE / LOG / SAVE (landscape and wide: next to the button; MA row = `MaHeader()`, also used by S1), the AI panel (CQ power button / S1 "AI" / MA: always visible). Cannot be the same (the layouts differ by design): the mix/layer selector (MA tabs, CQ left layers, S1 rail), the Main fader (MA last strip, CQ/S1 right column), REC and concert chips (MA row 2, CQ HOME tab, S1 bottom bar), the RTA panel (MA top, CQ/S1 inside the AI panel; S1 has an RTA view). **S1** = the Studio One remote look: left rail (Fader / Process / RTA / AI + layers), strips with a coloured header band and name tab, M / S (S = this channel on the RTA) / IN, meter column beside the fader, Main at the right. CQ now has the CQ-12T's layers of 5 (INPUT 1-5 / 6-10), the desk's own names and colours (dump slot of CH: name at 384, colour u32 at 400; 6 = purple seen, other indices a guess), and on PROCESSING the right fader is the selected strip. Pixel pairs original | ours: docs/cq-mode/pixel/. Another session works in reference/ (LOAD REFERENCE): stage only your own files by path.
 
 
+**Task 54, 11:20: v49 installed.** The USB capture fixes (VOICE_PERFORMANCE/CAMCORDER source, our mic RTA paused, digital
+silence played to the CQ's USB while capturing) are NOT yet verified: the CQ went silent (SD play of CQ-MT006 gave no
+input signal; blocker b1a1bfca3662) and FaderLog's 16-channel test took the USB input (main's order: hold). Next: music
+on the Main, ref_command LISTEN + STATUS → "live (CQ USB …)", REC 30 s, pull from Music/CQ MixPad, check per second;
+then STREAM multi + MSTART 30 s + scratchpad check_takes.py. Desk: Stream Mode Stereo (as found), Main PEQ as before.
+
 **Update 9.11.2026, task 54 (background session): v44-v46, REFERENCE + USB audio + multitrack mirror.** Code in
 android/.../reference/ (Bands, Analyzer, Matcher, RefStore+FileDecoder, UsbAudio, MultiTrack, OboePort, ReferenceDesk,
 RefPanel); the REF button sits under the CQ/MA/S1 button in all three layouts. Tested on the Pixel with the desk:
