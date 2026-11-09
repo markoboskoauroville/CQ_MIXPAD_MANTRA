@@ -838,7 +838,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun setUiMode(m: String) { uiMode = m; getSharedPreferences("view", MODE_PRIVATE).edit().putString("uiMode", m).apply() }
+    private fun chooseUi(m: String) { uiMode = m; getSharedPreferences("view", MODE_PRIVATE).edit().putString("uiMode", m).apply() }
 
     @Composable
     private fun CqScreen() {
@@ -879,7 +879,7 @@ class MainActivity : ComponentActivity() {
                 }
                 Box(Modifier.padding(horizontal = 8.dp).size(10.dp).clip(RoundedCornerShape(5.dp)).background(if (connected) CqTeal else Red))
                 Box(Modifier.padding(end = 6.dp).height(34.dp).clip(RoundedCornerShape(3.dp)).border(1.dp, CqLine, RoundedCornerShape(3.dp))
-                    .clickable { setUiMode("mantra") }.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
+                    .clickable { chooseUi("mantra") }.padding(horizontal = 10.dp), contentAlignment = Alignment.Center) {
                     Text("MANTRA", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
@@ -1064,7 +1064,7 @@ class MainActivity : ComponentActivity() {
                     Text("CQ MixPad (Mantra) ${BuildConfig.VERSION_NAME}", color = CqText, fontSize = 14.sp)
                     Text(link.status.value, color = CqDim, fontSize = 12.sp)
                     Spacer(Modifier.height(10.dp))
-                    CqButton("USER INTERFACE: CQ  (tap for MANTRA)", Modifier.fillMaxWidth(0.8f).height(46.dp)) { setUiMode("mantra") }
+                    CqButton("USER INTERFACE: CQ  (tap for MANTRA)", Modifier.fillMaxWidth(0.8f).height(46.dp)) { chooseUi("mantra") }
                 }
                 "DATA" -> Column(Modifier.weight(1f).padding(14.dp)) {
                     Text("Shows and libraries live on the desk's USB stick; use the original CQ MixPad for them.", color = CqDim, fontSize = 12.sp)
@@ -1087,7 +1087,7 @@ class MainActivity : ComponentActivity() {
             Row(Modifier.fillMaxWidth().height(36.dp)) { for (t in subs) Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) { Text(t, color = CqDim, fontSize = 12.sp) } }
             Box(Modifier.fillMaxSize().padding(16.dp).border(1.dp, CqTeal, RoundedCornerShape(4.dp)).padding(16.dp)) {
                 Column { Text(title, color = CqTeal, fontSize = 15.sp, fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); Text(text, color = CqText, fontSize = 13.sp)
-                    Spacer(Modifier.height(12.dp)); CqButton("OPEN MANTRA MODE", Modifier.width(220.dp).height(44.dp)) { setUiMode("mantra") } }
+                    Spacer(Modifier.height(12.dp)); CqButton("OPEN MANTRA MODE", Modifier.width(220.dp).height(44.dp)) { chooseUi("mantra") } }
             }
         }
     }
@@ -1171,7 +1171,7 @@ class MainActivity : ComponentActivity() {
                 if (!micOk) Chip("PERMISSIONS", Amber) { openAppSettings() }
                 if (store.apiKey() == null) Chip("KEY", Amber) { keyDialog = true }
                 Chip(if (speakAloud) "VOICE ON" else "VOICE OFF", if (speakAloud) Green else Grey) { speakAloud = !speakAloud; speech.stop() }
-                Chip("CQ", Cyan) { setUiMode("cq") }
+                Chip("CQ", Cyan) { chooseUi("cq") }
                 Chip(if (showLog) "LOG ▲" else "LOG", if (showLog) Cyan else Grey, filled = showLog) { showLog = !showLog }
                 Chip("SAVE", Blue) { saveConcert() }
             }
