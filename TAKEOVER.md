@@ -177,3 +177,12 @@ from the Mac (`adb shell run-as com.mantra.cqmixpad`), never in the repository.
 Recorder (REC/STOP/state/armed tracks) and the mixer's own **RTA** (31 third-octave bands) are decoded: see
 PROTOCOL.md and `tools/cq_mitm.py` (the man-in-the-middle used to decode them). One client at a time: keep CQ MixPad
 closed while this app records or reads the RTA.
+
+## PARKED 9.11.2026: 16-channel USB recording on the phone (tasks 54 and 59)
+Marko: "For the USB driver we can park the project. We are waiting for the answer from Allen & Heath support."
+- Proven: v49 is Latest. LOAD REFERENCE (MP3/FLAC, LUFS = ffmpeg), MATCH + UNDO (zero dump diff), Stream Mode switch from our app (one byte, offset 38870: 1 = Multitrack, 3 = Stereo; USB PID 38 = Multitrack, 41 = Stereo). The desk was left in Multitrack.
+- Android limit: the Pixel 7's audio HAL (AoC) opens the CQ at 16 ch but apps get zeros, and it cannot play into the CQ in Multitrack ("USB TX: invalid amount of channels requested (16)").
+- FaderLog (free, own usbfs iso driver, no root) opens the CQ at 16 ch and its meter shows real audio (USB channel n = desk input n), but it writes 0-byte files: the stream measures ~46.7 kHz (~15.6 ch) because it does not follow the CQ's asynchronous feedback endpoint 0x81.
+- Resume plan: our own UAC2 capture over usbfs: claim iface 2 alt 1, iso IN ep 0x82 (1024 B, 384 B nominal per microframe = 48 kHz x 16 ch x 4 B), size packets from feedback ep 0x81, write by frame count; Oboe's WaveFileWriter/FifoBuffer (Apache-2.0, THIRD_PARTY/). Estimate: 1-2 day spike, ~3 weeks total. Root not needed.
+- Waiting for Marko: send the Allen & Heath email (Gmail draft in marko.bosko@auroville.community, subject "CQ-12T USB multitrack on Android: driver, SDK or descriptor documentation?") through https://support.allen-heath.com; their answer decides between an SDK and our own driver.
+- Details: docs/usb-driver-research.md. Phone storage: 1.1 GB free (~26 min at 5 tracks).
