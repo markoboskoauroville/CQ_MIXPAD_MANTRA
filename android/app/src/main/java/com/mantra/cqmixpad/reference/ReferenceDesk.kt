@@ -36,11 +36,14 @@ class ReferenceDesk(
     private val askSonnet: (String) -> Unit,
     /** "Indian Embassy 7.11.2026": the concert's place and date, for the recordings' names. */
     private val concertName: () -> String,
+    /** Track n (1-based) as the band calls it: "Tajana", else "Ip3" / "Tr11". */
+    private val labelOf: (Int) -> String = { if (it <= 10) "Ip$it" else "Tr$it" },
 ) {
     data class Live(val thirds: DoubleArray, val source: String, val seconds: Double, val levelDb: Double)
 
     val store = RefStore(ctx)
     val usb = UsbAudio(ctx, log)
+    val multi = MultiTrack(ctx, scope, recorder, usb, log, labelOf, concertName)
     val live = MutableStateFlow<Live?>(null)
     val busy = MutableStateFlow("")
     val orange = MutableStateFlow<List<String>>(emptyList())
@@ -192,6 +195,16 @@ class ReferenceDesk(
             "The Main LR PEQ is already moved by MATCH; suggest fader balance and, as orange steps, what the desk link cannot set.")
     }
 
+    /** For the panel: recompose when the desk's dump or armed tracks change. */
+    @androidx.compose.runtime.Composable
+    fun recorderState() = androidx.compose.runtime.produceState(0, recorder) {
+        launch { recorder.state0.collect { value = value + 1 } }
+        launch { recorder.armed.collect { value = value + 1 } }
+    }
+    fun armedTracks(): List<Int> = recorder.armed.value?.let { a -> (1..16).filter { a and (1 shl (it - 1)) != 0 } } ?: emptyList()
+    fun deskRec() { recorder.rec(); line("desk SD REC sent; the phone follows with the armed tracks") }
+    fun deskStop() { recorder.stop(); line("desk SD STOP sent") }
+
     fun recName(): String = concertName().ifBlank { "CQ" } + " " + java.text.SimpleDateFormat("HHmm", Locale.US).format(java.util.Date())
 
     /** The test channel's commands. */
@@ -212,7 +225,14 @@ class ReferenceDesk(
             "STOP" -> { usb.stop(); "stopped: ${usb.lastFile.value}; take " + (usb.lastTake.value?.let { describe(it) } ?: "none") }
             "ADDTAKE" -> { addTake(); "selected ${store.current()?.name}" }
             "STATUS" -> status()
-            else -> "commands: LOAD <path>|<name>, SELECT <name>, DELETE <name>, MATCH, UNDO, MARK, DIFF, LISTEN, REC [all] [aac], STOP, ADDTAKE, STATUS"
+            "STREAM" -> { multi.setStream(arg.startsWith("m", true)); delay(4000); "stream mode now ${multi.streamMode()}; USB ${usb.device.value}" }
+            "PROBE" -> withContext(Dispatchers.IO) { multi.probe() }
+            "MSTART" -> { multi.start(arg.ifBlank { "PHONE-" + java.text.SimpleDateFormat("HHmmss", Locale.US).format(java.util.Date()) }); delay(2500); multi.status.value }
+            "MSTOP" -> { withContext(Dispatchers.IO) { multi.stop() }; multi.status.value }
+            "DESKREC" -> { recorder.rec(); delay(4000); "desk ${recorder.state.value} ${recorder.take.value}; phone: ${multi.status.value}" }
+            "DESKSTOP" -> { recorder.stop(); delay(5000); "desk ${recorder.state.value}; phone: ${multi.status.value}" }
+            "MSTATUS" -> "desk ${recorder.state.value} take ${recorder.take.value} armed ${recorder.armed.value?.let { Integer.toBinaryString(it) }} stream ${multi.streamMode()}; phone running ${multi.running.value}: ${multi.status.value}; free ${multi.freeBytes() / 1_000_000} MB; takes ${multi.takes.value.map { it.first + " (" + it.second.size + ")" }}"
+            else -> "commands: STREAM multi|stereo, PROBE, MSTART [take], MSTOP, DESKREC, DESKSTOP, MSTATUS, LOAD <path>|<name>, SELECT <name>, DELETE <name>, MATCH, UNDO, MARK, DIFF, LISTEN, REC [all] [aac], STOP, ADDTAKE, STATUS"
         }
     }
 

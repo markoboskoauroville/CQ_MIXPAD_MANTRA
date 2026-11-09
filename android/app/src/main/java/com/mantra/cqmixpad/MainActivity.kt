@@ -237,7 +237,8 @@ class MainActivity : ComponentActivity() {
         refDesk = com.mantra.cqmixpad.reference.ReferenceDesk(this, lifecycleScope, recorder, rta, { fbGuard },
             { t -> runOnUiThread { log.add(0, t) } }, { t -> runOnUiThread { say(t) } },
             { t -> runOnUiThread { command(t, fromVoice = false, withRta = true) } },
-            { store.current.value?.let { "${it.venue} ${it.date}" } ?: "" })
+            { store.current.value?.let { "${it.venue} ${it.date}" } ?: "" },
+            { k -> store.labels.value[if (k <= 10) "Ip$k" else "Tr$k"]?.name?.ifBlank { null } ?: if (k <= 10) "Ip$k" else "Tr$k" })
         uiMode = getSharedPreferences("view", MODE_PRIVATE).getString("uiMode", "cq") ?: "cq"
         setContent { ZoomPan { Box(Modifier.fillMaxSize()) {
             when (uiMode) { "cq" -> CqScreen(); "s1" -> S1Screen(); else -> Screen() }

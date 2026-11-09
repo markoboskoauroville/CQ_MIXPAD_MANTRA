@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -217,8 +218,67 @@ fun ReferencePanel(desk: ReferenceDesk, onClose: () -> Unit) {
             Text(String.format(Locale.US, "  %s: %.0f s · %s LUFS · crest %s · width %s", take!!.name, take!!.seconds, f1(take!!.lufs), f1(take!!.crestDb), f1(take!!.widthDb)),
                 color = PGrey, fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterVertically))
         }
+        MultiSection(desk)
         // what was done
         lines.take(12).forEach { Text(it, color = PGrey, fontSize = 11.sp) }
         Spacer(Modifier.height(40.dp))
+    }
+}
+
+/** The multitrack mirror of the desk's SD recorder (Marko, 9.11.2026), and the desk's USB Stream Mode. */
+@Composable
+private fun MultiSection(desk: ReferenceDesk) {
+    val m = desk.multi
+    val scope = rememberCoroutineScope()
+    val mirror by m.mirror.collectAsState()
+    val running by m.running.collectAsState()
+    val st by m.status.collectAsState()
+    val tr by m.tracks.collectAsState()
+    val pk by m.peaks.collectAsState()
+    val ms by m.elapsedMs.collectAsState()
+    val probe by m.probeText.collectAsState()
+    val takes by m.takes.collectAsState()
+    val dump by desk.recorderState()
+    dump.hashCode()
+    val mode = m.streamMode()
+    val armed = desk.armedTracks()
+    Text("MULTITRACK (the SD recorder's armed tracks, one WAV each)", color = PText, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+    Text("Stream Mode on the desk: ${mode ?: "…"} · armed: ${if (armed.isEmpty()) "…" else armed.joinToString(",")}", color = PGrey, fontSize = 12.sp)
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+        Big(if (mode == "Multitrack") "STREAM: MULTITRACK" else "STREAM: STEREO", PCyan, filled = mode == "Multitrack", enabled = !running) {
+            m.setStream(mode != "Multitrack")
+        }
+        Big(if (running) "■ STOP MULTI" else "● REC MULTI", PRed, filled = running) {
+            if (running) { desk.deskStop() } else { if (mode != "Multitrack") m.setStream(true); desk.deskRec() }
+        }
+        Small(if (mirror) "MIRROR SD: ON" else "MIRROR SD: OFF", PAmber, mirror) { m.mirror.value = !mirror }
+        Small("PROBE CHANNELS", PCyan, false) { scope.launch(kotlinx.coroutines.Dispatchers.IO) { m.probe() } }
+        val s = ms / 1000
+        if (running) Text(String.format(Locale.US, "  %d:%02d:%02d", s / 3600, s / 60 % 60, s % 60), color = PRed, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+    }
+    val n = if (running) tr.size else armed.size
+    val free = m.freeBytes()
+    val left = m.minutesLeft(maxOf(n, 1))
+    Text(String.format(Locale.US, "phone storage: %.1f GB free · %d min left at %d track%s (8.6 MB a minute a track)", free / 1e9, left, maxOf(n, 1), if (n == 1) "" else "s"),
+        color = if (left < 15) PRed else PGrey, fontSize = 12.sp)
+    if (left < 15) Text("STORAGE LOW: fewer tracks, or move takes off the phone (nothing is deleted by the app)", color = PRed, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    if (st.isNotBlank()) Text(st, color = if (running) PRed else PGrey, fontSize = 11.sp)
+    if (running && pk.isNotEmpty()) Row(Modifier.fillMaxWidth().height(60.dp).padding(vertical = 4.dp)) {
+        pk.forEachIndexed { i, d ->
+            Column(Modifier.weight(1f).padding(horizontal = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.weight(1f).width(10.dp).clip(RoundedCornerShape(3.dp)).background(Color(0xFF1C2333)), contentAlignment = Alignment.BottomCenter) {
+                    val fr = ((d + 60f) / 60f).coerceIn(0f, 1f)
+                    Box(Modifier.fillMaxWidth().fillMaxHeight(fr).background(if (d > -1f) PRed else if (d > -9f) PAmber else PGreen))
+                }
+                Text(tr.getOrNull(i)?.toString() ?: "", color = PGrey, fontSize = 10.sp)
+            }
+        }
+    }
+    if (probe.isNotBlank()) Text(probe, color = PCyan, fontSize = 11.sp)
+    takes.take(6).forEach { (folder, uris) ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Small("SHARE", PGreen, false) { m.share(folder) }
+            Text("${folder.removePrefix("Documents/CQ MixPad/")} · ${uris.size} files", color = PGrey, fontSize = 12.sp)
+        }
     }
 }
