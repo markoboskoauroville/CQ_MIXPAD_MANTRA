@@ -1,5 +1,11 @@
 # TAKEOVER: CQ MixPad (Mantra)
 
+**State 9.11.2026, night: v38, new look from Marko's lifestyle picture (Drive refs/cqmixpad_interface_target_crop.jpg). GitHub build green, tested on the Pixel 7 against the real CQ-12T.**
+- Look: rainbow LED-bar RTA (48 bars, colour by frequency, interpolated from the 10 octave bands; KD line in white/amber; RTA / FB / MATCH KD pills in its corners; bars rest at the floor on no signal); strips 80 dp with a channel colour button on top (tap = channel RTA, long press = drag), two dark buttons (MUTE, IN), slim groove with the meter inside (cyan, green, yellow over +6, red over +15) and a light cap, name tab at the bottom lit in the channel colour while unmuted. Colours are a fixed palette by channel code (ChPalette in MainActivity.kt): the desk's own channel colours are write-only in the protocol so far. All functions unchanged.
+- Test 9.11.2026: Pixel screenshots in ~/.mantra_sandbox/v38/ (px_a.png, px_mute.png, px_b.png); mute on Ip5 toggled and put back, read back in the app. Meters not seen live (desk stopped, no signal). Sandbox shot of v37 only for the layout.
+- Open: read the desk's channel colours; ease the log area to give the faders more height.
+
+
 **State 8.11.2026, late night: v36, GitHub build green, installed and tested on the Pixel 7. Desk left as Embassy mix v2.**
 
 ## Where we stopped (8.11.2026, late night, background session)

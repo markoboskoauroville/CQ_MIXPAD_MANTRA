@@ -22,3 +22,4 @@
 - **8.11.2026:** MixPad's knobs answer only a slow horizontal drag (cliclick dd/dm/du), not the wheel or a fast drag.
   `macro capture-window` of MixPad returned a stale picture: use `macro capture-screen 2`.
 - **8.11.2026:** The desk never echoes a change to its sender; check the truth in the connect dump (`tools/cq_dump.py`).
+- **9.11.2026:** The sandbox copy of the app searches the LAN and could reach the desk: stop it (`sandbox stop`) before the Pixel app connects (one private client). A picture-driven redesign compiled on the first CI run; interpolating the 10 octave bands into 48 bars looks like the picture but shows silence as a hump, so draw the floor when the level is under -80 dB.
