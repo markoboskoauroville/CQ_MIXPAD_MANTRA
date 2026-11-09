@@ -138,3 +138,7 @@
 "User interface must enable for each fader to quickly enter its input settings and adjust the gain for the input. When people are sometimes over excited, we need to adjust gain later during the song playing"
 "It is difficult to work with small buttons, please. Large buttons and then make user interface scrollable in all directions."
 "and also user interface should be resizable by pinching" / "three fingers to scroll the interface, pinch to resize the interface" / "one finger to operate user interface"
+
+## 9.11.2026 (background session: new look from the lifestyle picture)
+"Please take a look at the lifestyle image for our application to control the CQ mixer. I want the interface like this. It's better than what we did ... build it overnight."
+"you are rebuilding the user interface for CQ MixPad Mantra, so you need a phone" (the Pixel 7 is turned on for the tests) / "CQ is also in the network, ready to be tested and used."

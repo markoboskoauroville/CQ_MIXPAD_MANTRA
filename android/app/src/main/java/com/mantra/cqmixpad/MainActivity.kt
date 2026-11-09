@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -78,9 +79,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-private val Bg = Color(0xFF0B0B0C)
-private val Panel = Color(0xFF17171A)
-private val Rim = Color(0xFF2C2C2E)
+private val Bg = Color(0xFF0A0F1C)
+private val Panel = Color(0xFF141C2E)
+private val Rim = Color(0xFF263149)
 private val Text1 = Color(0xFFF2F2F7)
 private val Grey = Color(0xFF8E8E93)
 private val Red = Color(0xFFFF453A)
@@ -97,7 +98,14 @@ private const val METERS_DECODED = false
 private const val RTA_DECODED = true   // the desk's RTA, decoded 7.11.2026 (Recorder.rta)
 private val RecRed = Color(0xFFEF4444)    // TTT's recording red
 /** Strip width: wide enough for a thumb (Marko, 8.11.2026: "adapted to the fat finger"). */
-private val STRIP_W = 92.dp
+private val STRIP_W = 80.dp
+/** The picture's channel colour buttons (9.11.2026): pink, orange, yellow, green, cyan, light blue, violet, mint. The desk's own
+ *  channel colours are not read (PROTOCOL.md: colour is a write-only 7F 07 message so far), so a fixed palette by channel. */
+private val ChPalette = listOf(Color(0xFFF472B6), Color(0xFFFB923C), Color(0xFFFACC15), Color(0xFF4ADE80),
+    Color(0xFF22D3EE), Color(0xFF7DD3FC), Color(0xFFA78BFA), Color(0xFF5EEAD4))
+private fun chColor(code: Int) = ChPalette[Math.floorMod(code, ChPalette.size)]
+private val Cap = Color(0xFFE6EAF2)
+private val Dark = Color(0xFF0F1626)
 
 class MainActivity : ComponentActivity() {
     private lateinit var link: Link
@@ -933,7 +941,7 @@ class MainActivity : ComponentActivity() {
                                 onDragCancel = { dragId = null; dragDx = 0f }) { ch, amount -> ch.consume(); dragDx += amount.x }
                         },
                         modifier = if (dragId == id) Modifier.graphicsLayer { translationX = dragDx; alpha = 0.85f } else Modifier,
-                        onInput = if (isIp) ({ openInput(s.code) }) else null)
+                        onInput = if (isIp) ({ openInput(s.code) }) else null, tint = chColor(s.code))
                 }
                 Cq.masterParam(eff)?.let { p ->
                     val mp = Cq.masterMuteParam(eff)
@@ -944,11 +952,11 @@ class MainActivity : ComponentActivity() {
                         meter2 = if (metersOn && eff == "MAIN") outM[7] else null,
                         selected = eff == "MAIN" && rtaSrc == 0x38,
                         onTitle = if (eff == "MAIN") ({ showOnRta(0x38) }) else null,
-                        onDb = { link.setDb(p, it) }, onMute = { mp?.let { link.setMute(it, !link.muted(it)) } }, onPan = {})
+                        onDb = { link.setDb(p, it) }, onMute = { mp?.let { link.setMute(it, !link.muted(it)) } }, onPan = {}, tint = Color(0xFFFFD27A))
                 }
                 if (eff == "MAIN") for (d in 1..4) if (link.values.containsKey(Cq.dcaLevelParam(d))) {
                     Strip(top = "DCA$d", sub = "", db = link.db(Cq.dcaLevelParam(d)), muted = link.muted(Cq.dcaMuteParam(d)), pan = null,
-                        onDb = { link.setDb(Cq.dcaLevelParam(d), it) }, onMute = { link.setMute(Cq.dcaMuteParam(d), !link.muted(Cq.dcaMuteParam(d))) }, onPan = {})
+                        onDb = { link.setDb(Cq.dcaLevelParam(d), it) }, onMute = { link.setMute(Cq.dcaMuteParam(d), !link.muted(Cq.dcaMuteParam(d))) }, onPan = {}, tint = Color(0xFFA78BFA))
                 }
             }
             }
@@ -988,36 +996,67 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
+    private fun RtaPill(label: String, color: Color, filled: Boolean, onClick: () -> Unit) {
+        Box(Modifier.padding(end = 6.dp).height(40.dp).clip(RoundedCornerShape(10.dp)).background(if (filled) color.copy(alpha = 0.28f) else Color(0x990A0F1C))
+            .border(1.dp, color, RoundedCornerShape(10.dp)).clickable { onClick() }.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+            Text(label, color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
+    }
+
+    @Composable
     private fun RtaStrip() {
         val live by rta.live.collectAsState()
         val on = rtaOn
         val src by recorder.rtaSource.collectAsState()
         val onMain = src == 0x38
         val labelsNow by store.labels.collectAsState()
-        Row(Modifier.fillMaxWidth().height(176.dp).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Canvas(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(6.dp)).background(Panel)) {
-                val n = 10; val w = size.width / n
-                fun y(db: Double) = (size.height * (-db / 50.0)).toFloat().coerceIn(0f, size.height)
-                for (i in 0 until n) {
-                    if (on) {
-                        val top = y(live[i])
-                        drawRect(Cyan.copy(alpha = 0.75f), Offset(i * w + w * 0.15f, top), Size(w * 0.7f, size.height - top))
+        // the spectrum as in the lifestyle picture (9.11.2026): rainbow LED bars, colour by frequency (red low, violet high),
+        // over a fine grid; the ten octave bands of the desk's RTA drawn as 48 bars, interpolated; the buttons sit in its corners
+        Box(Modifier.fillMaxWidth().height(190.dp).padding(vertical = 4.dp).clip(RoundedCornerShape(12.dp))
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF0C1424), Color(0xFF101A2E))))
+            .border(1.dp, Rim, RoundedCornerShape(12.dp))) {
+            Canvas(Modifier.fillMaxSize()) {
+                val nb = 48; val w = size.width / nb
+                val top0 = 34f; val h = size.height - top0 - 4f   // room for the buttons above the bars
+                // fine grid
+                for (i in 0..9) drawRect(Color(0x1AFFFFFF), Offset(0f, top0 + h * i / 9f), Size(size.width, 1f))
+                for (i in 0..nb step 4) drawRect(Color(0x14FFFFFF), Offset(i * w, top0), Size(1f, h))
+                if (on) {
+                    val seg = 7f
+                    for (j in 0 until nb) {
+                        val x = j / (nb - 1f) * 9f; val i0 = x.toInt().coerceAtMost(8); val t = x - i0
+                        val db = live[i0] * (1 - t) + live[i0 + 1] * t
+                        val frac = (1.0 - (-db / 45.0)).coerceIn(0.0, 1.0).toFloat()
+                        val col = Color.hsv(j / (nb - 1f) * 285f, 0.85f, 1f)
+                        val n = (frac * h / seg).toInt()
+                        for (k in 0 until n) drawRoundRect(col, Offset(j * w + w * 0.14f, top0 + h - (k + 1) * seg + 1.5f), Size(w * 0.72f, seg - 2.5f),
+                            androidx.compose.ui.geometry.CornerRadius(2f))
                     }
-                    if (onMain) { val k = y(Rta.KD[i]); drawRect(Amber, Offset(i * w + 2f, k - 2f), Size(w - 4f, 4f)) }
+                    if (onMain) {
+                        var px = 0f; var py = 0f
+                        for (i in 0 until 10) {
+                            val cx = (i / 9f) * (size.width - w) + w / 2
+                            val cy = top0 + h * (-Rta.KD[i] / 45.0).toFloat().coerceIn(0f, 1f)
+                            if (i > 0) drawLine(Color.White.copy(alpha = 0.9f), Offset(px, py), Offset(cx, cy), 3f)
+                            drawCircle(Amber, 5f, Offset(cx, cy)); px = cx; py = cy
+                        }
+                    }
                 }
             }
-            Column(Modifier.padding(start = 6.dp).fillMaxHeight().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-                Chip(if (on) "RTA ON" else "RTA", if (on) Cyan else Grey, filled = on) { toggleRta() }
-                Chip(if (fbGuard) "FB GUARD ON" else "FB GUARD OFF", if (fbGuard) Red else Grey, filled = fbGuard) {
+            if (!on) Text("RTA off: tap RTA", color = Grey, fontSize = 12.sp, modifier = Modifier.align(Alignment.Center))
+            Row(Modifier.align(Alignment.TopStart).padding(6.dp)) {
+                RtaPill(if (on) "RTA ON" else "RTA", if (on) Cyan else Grey, on) { toggleRta() }
+                RtaPill(if (fbGuard) "FB ON" else "FB OFF", if (fbGuard) Red else Grey, fbGuard) {
                     fbGuard = !fbGuard; feedback.reset()
                     if (fbGuard && !rtaOn) toggleRta()
                     say(if (fbGuard) "Feedback guard on." else "Feedback guard off.")
                 }
-                Chip("MATCH KD", if (RTA_DECODED) Amber else Grey) {
-                    if (!RTA_DECODED) { say("Matching to the reference is off. I cannot read the mixer's real-time analyser yet, so I will not mix from a reference."); return@Chip }
-
-                    if (System.currentTimeMillis() - recorder.rtaAt > 3000) { say("The mixer's analyser is not streaming. I will not match without it."); return@Chip }
-                    if (rta.meanLevel() < -60) { say("The main mix is silent, nothing to match."); return@Chip }
+            }
+            Row(Modifier.align(Alignment.TopEnd).padding(6.dp)) {
+                RtaPill("MATCH KD", if (RTA_DECODED) Amber else Grey, false) {
+                    if (!RTA_DECODED) { say("Matching to the reference is off. I cannot read the mixer's real-time analyser yet, so I will not mix from a reference."); return@RtaPill }
+                    if (System.currentTimeMillis() - recorder.rtaAt > 3000) { say("The mixer's analyser is not streaming. I will not match without it."); return@RtaPill }
+                    if (rta.meanLevel() < -60) { say("The main mix is silent, nothing to match."); return@RtaPill }
                     command("Compare the RTA with the Krishna Das profile and suggest how to fit the mix, vocals in the first plan.", fromVoice = false, withRta = true)
                 }
             }
@@ -1036,7 +1075,6 @@ class MainActivity : ComponentActivity() {
                 Text(if (on && onMain) String.format(Locale.US, "%s %+.0f", n, live[i] - Rta.KD[i]) else n, color = Grey, fontSize = 9.sp,
                     modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1)
             }
-            Spacer(Modifier.width(78.dp))
         }
     }
 
@@ -1132,34 +1170,40 @@ private fun Chip(label: String, color: Color, filled: Boolean = false, onClick: 
     }
 }
 
-/** One channel strip: name, mute, fader (the CQ's own taper: travel = the 14-bit value), dB, pan on MAIN. */
+/** One channel strip in the look of the lifestyle picture (9.11.2026): colour button on top, two small dark buttons (mute, IN),
+ *  a slim groove with the desk's meter inside and a light cap, a name tab at the bottom (lit in the channel colour). */
 @Composable
 private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Double?, master: Boolean = false, meter: Float? = null,
                   onDb: (Double) -> Unit, onMute: () -> Unit, onPan: (Double) -> Unit,
                   meter2: Float? = null, moved: Boolean = false, selected: Boolean = false, onTitle: (() -> Unit)? = null,
-                  titleMod: Modifier = Modifier, modifier: Modifier = Modifier, onInput: (() -> Unit)? = null) {
+                  titleMod: Modifier = Modifier, modifier: Modifier = Modifier, onInput: (() -> Unit)? = null,
+                  tint: Color = Cyan) {
     val maxV = Cq.dbToValue(Cq.MAX_DB).toFloat()
     val setDb by androidx.compose.runtime.rememberUpdatedState(onDb)
     val curDb by androidx.compose.runtime.rememberUpdatedState(db)
     val curPan by androidx.compose.runtime.rememberUpdatedState(pan ?: 0.0)
     val setPan by androidx.compose.runtime.rememberUpdatedState(onPan)
-    Column(modifier.width(STRIP_W).fillMaxHeight().padding(horizontal = 2.dp).clip(RoundedCornerShape(6.dp))
-        .background(if (master) Color(0xFF1E1A12) else Panel).padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        // the name: a tap shows this channel on the RTA at the top, a long press picks the strip up to move it
-        Column(titleMod.fillMaxWidth().clip(RoundedCornerShape(4.dp)).background(if (selected) Cyan.copy(alpha = 0.25f) else Color.Transparent)
-            .then(if (onTitle != null) Modifier.clickable { onTitle() } else Modifier), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(top, color = if (selected) Cyan else Text1, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(sub, color = Grey, fontSize = 9.sp, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
+    val tapMod = if (onTitle != null) Modifier.clickable { onTitle() } else Modifier
+    Column(modifier.width(STRIP_W).fillMaxHeight().padding(horizontal = 2.dp).clip(RoundedCornerShape(10.dp))
+        .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF1C2740), Color(0xFF131B2D))))
+        .border(1.dp, if (selected) tint else Rim, RoundedCornerShape(10.dp)).padding(5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        // the colour button: a tap shows this channel on the RTA at the top, a long press picks the strip up to move it
+        Box(titleMod.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(12.dp))
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(tint, tint.copy(alpha = 0.72f)))).then(tapMod),
+            contentAlignment = Alignment.Center) {
+            if (selected) Box(Modifier.size(10.dp).clip(RoundedCornerShape(5.dp)).background(Color.White.copy(alpha = 0.85f)))
         }
-        Box(Modifier.padding(vertical = 3.dp).fillMaxWidth().clip(RoundedCornerShape(5.dp))
-            .background(if (muted) Red else Color(0xFF2A2A2E)).clickable { onMute() }.padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
-            Text("MUTE", color = if (muted) Color.White else Grey, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(5.dp))
+        // two small dark buttons: mute and the input's settings (Marko, 8.11.2026: "quickly enter its input settings")
+        Box(Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(8.dp)).background(if (muted) Red else Dark)
+            .border(1.dp, if (muted) Red else Rim, RoundedCornerShape(8.dp)).clickable { onMute() }, contentAlignment = Alignment.Center) {
+            Text(if (muted) "MUTED" else "MUTE", color = if (muted) Color.White else Grey, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
-        // the input's settings in one tap (Marko, 8.11.2026: "quickly enter its input settings and adjust the gain")
-        if (onInput != null) Box(Modifier.padding(bottom = 3.dp).fillMaxWidth().clip(RoundedCornerShape(5.dp)).border(1.dp, Cyan, RoundedCornerShape(5.dp))
-            .clickable { onInput() }.padding(vertical = 15.dp), contentAlignment = Alignment.Center) {
-            Text("IN", color = Cyan, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-        }
+        Spacer(Modifier.height(4.dp))
+        if (onInput != null) Box(Modifier.fillMaxWidth().height(42.dp).clip(RoundedCornerShape(8.dp)).background(Dark)
+            .border(1.dp, Rim, RoundedCornerShape(8.dp)).clickable { onInput() }, contentAlignment = Alignment.Center) {
+            Text("IN", color = Cyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        } else Spacer(Modifier.height(42.dp))
         if (pan != null) {
             Canvas(Modifier.fillMaxWidth().height(30.dp).pointerInput(Unit) {
                 detectTapGestures(onDoubleTap = { setPan(0.0) })
@@ -1171,13 +1215,13 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
                     setPan((start + acc / size.width * 200).coerceIn(-100.0, 100.0))
                 }
             }) {
-                drawRect(Rim, Offset(0f, size.height / 2 - 2), Size(size.width, 4f))
+                drawRoundRect(Dark, Offset(0f, size.height / 2 - 3), Size(size.width, 6f), androidx.compose.ui.geometry.CornerRadius(3f))
                 val x = ((pan + 100) / 200 * size.width).toFloat()
-                drawRect(Cyan, Offset(x - 4, 2f), Size(8f, size.height - 4))
+                drawRoundRect(tint, Offset(x - 5, 3f), Size(10f, size.height - 6), androidx.compose.ui.geometry.CornerRadius(4f))
             }
             Text(if (kotlin.math.abs(pan) < 1) "C" else if (pan < 0) "L${(-pan).toInt()}" else "R${pan.toInt()}", color = Grey, fontSize = 9.sp)
         }
-        Text(Cq.dbText(db), color = if (muted) Red else Cyan, fontSize = 11.sp)
+        Text(Cq.dbText(db), color = if (muted) Red else Cap, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 3.dp))
         val pos = (Cq.dbToValue(db) / maxV).coerceIn(0f, 1f)
         Canvas(Modifier.weight(1f).fillMaxWidth().padding(vertical = 4.dp).pointerInput(Unit) {
             // relative: the fader moves only by the finger's travel; a touch anywhere never jumps it (live safety)
@@ -1189,20 +1233,39 @@ private fun Strip(top: String, sub: String, db: Double, muted: Boolean, pan: Dou
             }
         }.pointerInput(Unit) { detectTapGestures(onDoubleTap = { setDb(0.0) }) }) {
             val cx = size.width / 2
-            drawRect(Rim, Offset(cx - 6, 0f), Size(12f, size.height))
-            // the desk's meter inside the fader's groove, on the fader's own scale (0 = the desk's nominal, the 0 mark);
-            // green, amber over +6 (about -12 dBFS), red over +15 (about -3 dBFS); master: L and R side by side
+            val cr = androidx.compose.ui.geometry.CornerRadius(7f)
+            // the scale ticks either side of the groove, 0 mark brighter
+            val zero = size.height * (1f - Cq.dbToValue(0.0) / maxV)
+            for (i in 0..20) { val ty = size.height * i / 20f; drawRect(Rim, Offset(cx - 22, ty), Size(5f, 2f)); drawRect(Rim, Offset(cx + 17, ty), Size(5f, 2f)) }
+            drawRect(Grey, Offset(cx - 26, zero - 1), Size(10f, 2f)); drawRect(Grey, Offset(cx + 16, zero - 1), Size(10f, 2f))
+            drawRoundRect(Dark, Offset(cx - 7, 0f), Size(14f, size.height), cr)
+            // the desk's meter inside the groove, on the fader's own scale; cyan, green, yellow over +6, red over +15
+            fun frac(d: Double) = 1f - Cq.dbToValue(d.coerceIn(-85.0, Cq.MAX_DB)) / maxV
+            val grad = androidx.compose.ui.graphics.Brush.verticalGradient(
+                *listOf(frac(Cq.MAX_DB) to Color(0xFFEF4444), frac(15.0) to Color(0xFFEF4444), frac(8.0) to Color(0xFFFACC15),
+                    frac(0.0) to Color(0xFF4ADE80), frac(-30.0) to Color(0xFF22D3EE), 1f to Color(0xFF22D3EE)).toTypedArray(),
+                startY = 0f, endY = size.height)
             fun bar(d: Float?, x: Float, w: Float) {
                 if (d == null || d < -85f) return
-                val top = size.height * (1f - Cq.dbToValue(d.toDouble().coerceIn(-85.0, Cq.MAX_DB)) / maxV)
-                drawRect(when { d > 15f -> Red; d > 6f -> Amber; else -> Green }, Offset(x, top), Size(w, size.height - top))
+                val t = size.height * frac(d.toDouble())
+                drawRoundRect(grad, Offset(x, t), Size(w, size.height - t), androidx.compose.ui.geometry.CornerRadius(w / 2))
             }
-            if (meter2 == null) bar(meter, cx - 5, 10f) else { bar(meter, cx - 6, 5.5f); bar(meter2, cx + 0.5f, 5.5f) }
-            val zero = size.height * (1f - Cq.dbToValue(0.0) / maxV)
-            drawRect(Grey, Offset(cx - 14, zero - 1), Size(28f, 2f))
+            if (meter2 == null) bar(meter, cx - 4.5f, 9f) else { bar(meter, cx - 5.5f, 5f); bar(meter2, cx + 0.5f, 5f) }
+            // the light cap
             val y = size.height * (1f - pos)
-            drawRect(if (muted) Red else Text1, Offset(cx - size.width * 0.38f, y - 10), Size(size.width * 0.76f, 20f))
+            val cw = size.width * 0.82f; val ch = 30f
+            drawRoundRect(Color(0x66000000), Offset(cx - cw / 2 + 1, y - ch / 2 + 3), Size(cw, ch), androidx.compose.ui.geometry.CornerRadius(6f))
+            drawRoundRect(if (muted) Color(0xFFFCA5A5) else Cap, Offset(cx - cw / 2, y - ch / 2), Size(cw, ch), androidx.compose.ui.geometry.CornerRadius(6f))
+            drawRect(Color(0xFF6B7488), Offset(cx - cw / 2 + 6, y - 1f), Size(cw - 12, 2f))
         }
+        // the name tab, lit in the channel colour while the channel is open; dark with white letters when muted
+        val lit = !muted
+        Box(Modifier.fillMaxWidth().height(34.dp).clip(RoundedCornerShape(8.dp)).background(if (lit) tint else Dark)
+            .border(1.dp, if (lit) tint else Rim, RoundedCornerShape(8.dp)).then(tapMod), contentAlignment = Alignment.Center) {
+            Text(top, color = if (lit) Color(0xFF0A0F1C) else Text1, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 3.dp))
+        }
+        Text(sub.substringBefore(" · "), color = Grey, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
         // Marko, 8.11.2026: a fader moved from its own place gets one orange underline
         if (moved) Box(Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)).background(Amber))
     }
