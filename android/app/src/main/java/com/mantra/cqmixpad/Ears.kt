@@ -74,6 +74,10 @@ class Rta {
         val KD = doubleArrayOf(-29.0, -13.8, -6.6, -7.5, -6.4, -6.3, -11.8, -15.7, -21.4, -30.8)
     }
 
+    /** The selected reference in the desk measure (task 54: LOAD REFERENCE; Krishna Das until another is chosen). */
+    @Volatile var target: DoubleArray = KD
+    @Volatile var targetName: String = "Krishna Das"
+
     /** Smoothed live profile (about 1 s), and the long average since the last reset (for MATCH). */
     val live = MutableStateFlow(DoubleArray(10) { -60.0 })
     val level = MutableStateFlow(-90.0)
@@ -101,8 +105,8 @@ class Rta {
         return buildString {
             append("RTA of the mixer's Main LR (the desk's own analyser, 31 bands summed to octaves), ${seconds()} s averaged, level ${meanLevel().toInt()} dB. ")
             append("Band share of the whole (dB) 31..16k: ").append(a.joinToString(", ") { String.format(java.util.Locale.US, "%.1f", it) })
-            append(". Krishna Das reference: ").append(KD.joinToString(", ") { String.format(java.util.Locale.US, "%.1f", it) })
-            append(". Mix minus reference: ").append(a.indices.joinToString(", ") { NAMES[it] + " " + String.format(java.util.Locale.US, "%+.1f", a[it] - KD[it]) })
+            append(". $targetName reference: ").append(target.joinToString(", ") { String.format(java.util.Locale.US, "%.1f", it) })
+            append(". Mix minus reference: ").append(a.indices.joinToString(", ") { NAMES[it] + " " + String.format(java.util.Locale.US, "%+.1f", a[it] - target[it]) })
             append(".")
         }
     }

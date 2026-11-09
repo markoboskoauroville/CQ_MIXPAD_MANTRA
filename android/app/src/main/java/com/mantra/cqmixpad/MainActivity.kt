@@ -117,6 +117,9 @@ class MainActivity : ComponentActivity() {
     private lateinit var store: Store
     private lateinit var brain: Brain
     private val rta = Rta()
+    /** Task 54: LOAD REFERENCE, MATCH to it, the CQ's USB audio recorder (package reference). */
+    private lateinit var refDesk: com.mantra.cqmixpad.reference.ReferenceDesk
+    private var refOpen by mutableStateOf(false)
     private var rtaJob: Job? = null
     private lateinit var speech: Speech
     private lateinit var voice: Voice
@@ -231,10 +234,16 @@ class MainActivity : ComponentActivity() {
                 meters.raw8?.let { if (f8.length() > 640L * 240) f8.writeBytes(ByteArray(0)); f8.appendBytes(it) }
             }
         }
+        refDesk = com.mantra.cqmixpad.reference.ReferenceDesk(this, lifecycleScope, recorder, rta, { fbGuard },
+            { t -> runOnUiThread { log.add(0, t) } }, { t -> runOnUiThread { say(t) } },
+            { t -> runOnUiThread { command(t, fromVoice = false, withRta = true) } },
+            { store.current.value?.let { "${it.venue} ${it.date}" } ?: "" })
         uiMode = getSharedPreferences("view", MODE_PRIVATE).getString("uiMode", "cq") ?: "cq"
         setContent { ZoomPan { Box(Modifier.fillMaxSize()) {
             when (uiMode) { "cq" -> CqScreen(); "s1" -> S1Screen(); else -> Screen() }
+            if (refOpen) com.mantra.cqmixpad.reference.ReferencePanel(refDesk) { refOpen = false }
             UiButton(Modifier.align(Alignment.TopEnd))
+            com.mantra.cqmixpad.reference.RefButton(refDesk, Modifier.align(Alignment.TopEnd)) { refOpen = !refOpen }
         } } }
     }
 
@@ -1507,7 +1516,7 @@ class MainActivity : ComponentActivity() {
                     var px = 0f; var py = 0f
                     for (i in 0 until 10) {
                         val cx = (3 * i + 2) * w + w / 2
-                        val cy = top0 + h * (-Rta.KD[i] / 45.0).toFloat().coerceIn(0f, 1f)
+                        val cy = top0 + h * (-rta.target[i] / 45.0).toFloat().coerceIn(0f, 1f)
                         if (i > 0) drawLine(Amber, Offset(px, py), Offset(cx, cy), 2.5f)
                         px = cx; py = cy
                     }
@@ -1523,12 +1532,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
             Row(Modifier.align(Alignment.TopEnd).padding(6.dp)) {
-                RtaPill("MATCH KD", if (RTA_DECODED) Amber else Grey, kdShow) {
+                RtaPill(if (rta.targetName == "Krishna Das") "MATCH KD" else "MATCH REF", if (RTA_DECODED) Amber else Grey, kdShow) {
                     kdShow = !kdShow; if (!kdShow) return@RtaPill
                     if (!RTA_DECODED) { say("Matching to the reference is off. I cannot read the mixer's real-time analyser yet, so I will not mix from a reference."); return@RtaPill }
                     if (System.currentTimeMillis() - recorder.rtaAt > 3000) { say("The mixer's analyser is not streaming. I will not match without it."); return@RtaPill }
                     if (rta.meanLevel() < -60) { say("The main mix is silent, nothing to match."); return@RtaPill }
-                    command("Compare the RTA with the Krishna Das profile and suggest how to fit the mix, vocals in the first plan.", fromVoice = false, withRta = true)
+                    command("Compare the RTA with the ${rta.targetName} reference profile and suggest how to fit the mix, vocals in the first plan.", fromVoice = false, withRta = true)
                 }
             }
         }
@@ -1536,14 +1545,14 @@ class MainActivity : ComponentActivity() {
             val lv by rta.level.collectAsState()
             val who = if (onMain) "MAIN LR" else "Ip${src + 1}" + (labelsNow["Ip${src + 1}"]?.name?.ifBlank { null }?.let { " $it" } ?: "")
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(String.format(Locale.US, "RTA %s · %.0f dB%s%s", who, lv, if (lv < -80) " · no signal" else "", if (onMain) " · orange = Krishna Das" else " · tap its name again for MAIN"),
+                Text(String.format(Locale.US, "RTA %s · %.0f dB%s%s", who, lv, if (lv < -80) " · no signal" else "", if (onMain) " · orange = " + rta.targetName else " · tap its name again for MAIN"),
                     color = if (lv < -80) Amber else Grey, fontSize = 10.sp, modifier = Modifier.weight(1f))
                 if (!onMain) Text("MAIN", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { showOnRta(0x38) }.padding(horizontal = 6.dp))
             }
         }
         Row(Modifier.fillMaxWidth()) {
             Rta.NAMES.forEachIndexed { i, n ->
-                Text(if (on && onMain) String.format(Locale.US, "%s %+.0f", n, live[i] - Rta.KD[i]) else n, color = Grey, fontSize = 9.sp,
+                Text(if (on && onMain) String.format(Locale.US, "%s %+.0f", n, live[i] - rta.target[i]) else n, color = Grey, fontSize = 9.sp,
                     modifier = Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1)
             }
         }

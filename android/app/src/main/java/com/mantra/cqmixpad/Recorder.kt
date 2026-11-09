@@ -98,7 +98,7 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
                     // ff 03 = tracks 1-10, ff 07 = 1-11)
                     if (type == 4 && len > 200) {
                         armed.value = (d[len - 100].toInt() and 0xFF) or ((d[len - 99].toInt() and 0xFF) shl 8)
-                        if (len > 32000) state0.value = d          // the whole desk state: input settings read from here
+                        if (len > 32000) { state0.value = d; dumps.value = dumps.value + 1 }   // the whole desk state: input settings read from here
                     }
                 } else if (b0 == 0xF7) {
                     // fixed 8-byte messages (as measured on the CQ-12T, 7.11.2026)
@@ -260,6 +260,11 @@ class Recorder(private val host: () -> String, private val scope: CoroutineScope
     fun colourNow(ch: Int): Int? = state0.value?.getOrNull(400 + 280 * ch)?.toInt()?.and(0xFF)
     fun gainNow(ch: Int) = dbOf(31248 + 4 * ch)
     fun askState(): Boolean = send(f(3))
+    /** For the reference package (task 54): fresh dumps counted, a raw private-protocol message, a dump word read and patched. */
+    val dumps = MutableStateFlow(0)
+    fun sendRaw(b: ByteArray): Boolean = send(b)
+    fun wordAt(off: Int): Int? = word(off)
+    fun patchAt(off: Int, v: Int) = patch(off, v)
 
     /** Input gain (analogue preamp, block 0A param 0C sub 01) and trim (block 0A param 0F), dB. */
     fun gain(ch: Int, db: Double): Boolean { val v = dbRaw(db.coerceIn(0.0, 60.0)); patch(31248 + 4 * ch, v); return send(m(0x0A, 0x0C, ch, 1, v)) }
