@@ -115,3 +115,10 @@ usbmon / Wireshark capture on the phone needs root; the Pixel 7 is stock, so no 
 ### SD playback as the signal (9.11.2026 ~11:45): still silent
 
 The desk's transport status message (7F 07 ... 11 12 1C) names the current take as "CQ-M?007" (the take selected is 007, not MT006, and cq_play.py's regex `CQ-MT\d{3}` no longer matches, so its "selected" check was meaningless); the position fields (0x02C6, 0x38E4) do not move, i.e. the player is stopped. A play toggle (F7 11 11 10 02), a seek to 30 s and a prev (F7 11 11 10 00) gave no change of take and all 16 input meters stayed -110. Not found: the input source of Ip1-10 (message F7 09 09 0D CH 02 00 17 changes nothing in the dump, so they are either already SD/USB or the message is ignored) or whether MT007 is empty. Desk left stopped (a stop was sent last), no other change. Blocker for Marko registered: plug any audio source into input 1 and play.
+
+### With Marko's SD playback running, 9.11.2026 13:24
+
+- Desk meters (read-only): Ip2 -13 dB, Ip3 +3, Ip6 +2, Ip7 +8 (dB re nominal, max of 3 s), Main L/R +10/+9; the other inputs -110.
+- FaderLog (Rec tab, USB 1/2, Live input): its own meter showed real audio on the R channel (peak -42 dB), i.e. the 16-ch iso stream from the CQ carries non-zero data to the app on the Pixel. It also warned "This mixer's audio doesn't match what FaderLog expects, so recordings may be noise" (the 16-ch stream measured at 46.7 kHz vs 48 kHz).
+- A 22 s take on pair 1/2 was written as `FaderLog_2026-11-09_132459.wav`, but **0 PCM bytes (44-byte header only)**: FaderLog's free version / its rate-mismatch guard produced no samples. So there is still no WAV with real samples; pairs 3/4, 5/6, 7/8 were not recorded (my taps missed after the first take).
+- Next: either the FaderLog Pro unlock (EUR 16.99 in-app, Marko to decide via spend gate) to see whether the guard is the gate, or our own capture app (descriptor shows 16 ch, 24-bit in 4-byte subslots, ep 0x82, 384 B nominal per microframe) which is the actual deliverable; FaderLog proves the stream is reachable.
